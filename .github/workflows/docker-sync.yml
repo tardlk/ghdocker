@@ -116,15 +116,17 @@ jobs:
               continue
             fi
 
-            # 准备新行的数据（移除 docker-compose 相关字段）
+            # 准备 pull 命令格式
             pull_cmd="ghcr.io/${{ env.GHCR_USER }}/$IMAGE_NAME"
             if [ "$target_tag" != "latest" ]; then
               pull_cmd="$pull_cmd:$target_tag"
             fi
             pull_cmd="\`$pull_cmd\`"
             
-            # 新行数据：源镜像 | pull镜像 | 同步状态 | 更新时间
-            new_line_data="${full_image}${UNIQUE_SEPARATOR}${pull_cmd}${UNIQUE_SEPARATOR}${sync_status}${UNIQUE_SEPARATOR}"
+            # 关键修复：强制保留4个字段（即使更新时间为空），避免空行
+            # 不改变原有更新时间逻辑（保持为空），仅确保字段数量完整
+            update_time=""  # 维持原有空值逻辑
+            new_line_data="${full_image}${UNIQUE_SEPARATOR}${pull_cmd}${UNIQUE_SEPARATOR}${sync_status}${UNIQUE_SEPARATOR}${update_time}"
             NEW_ROWS_DATA+="${new_line_data}\n"
           done
 
@@ -150,7 +152,7 @@ jobs:
             {
               # 处理现有行（移除原 docker-compose 列）
               echo "$existing_rows" | sed -E 's/(\| [^|]*) \| [^|]*/\1/' | sed 's/^| [0-9]\{1,\} *|/|/'
-              # 处理新行
+              # 处理新行（因字段完整，不会产生空行）
               echo -e "$NEW_ROWS_DATA" | sed '/^$/d' | awk -F"${UNIQUE_SEPARATOR}" '{printf("| %s | %s | %s | %s |\n", $1, $2, $3, $4)}'
             } | awk -F'|' '
               {
@@ -166,7 +168,6 @@ jobs:
           {
             echo "${TABLE_TITLE}"
             echo ""
-            # 移除 docker-compose 列标题
             echo "|   | 源镜像 | pull 镜像 | 同步 | 更新时间 |"
             echo "| ---- | -------- | --------- | ---- | -------- |"
             echo "$sorted_table_rows"
@@ -188,7 +189,7 @@ jobs:
           ' README.md > README.tmp && mv README.tmp README.md
           rm new_table.tmp
 
-          # 提交更改（移除 docker-compose 目录）
+          # 提交更改
           git add README.md
           if git diff --staged --quiet; then
             echo "没有新的镜像或文件变更可提交。"
@@ -196,3 +197,4 @@ jobs:
             git commit -m "chore(sync): 同步新镜像并自动排序更新README"
             git push
           fi
+    
