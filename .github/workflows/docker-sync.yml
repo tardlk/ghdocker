@@ -59,8 +59,10 @@ jobs:
           # --- 1. 镜像同步与信息收集 ---
           NEW_ROWS_DATA=""
           UNIQUE_SEPARATOR="%%%"
-          TABLE_TITLE="### 已同步的 Docker 镜像"
+          # 修正表格标题为二级标题（匹配 README）
+          TABLE_TITLE="## 🗂️ 已同步的 Docker 镜像"
 
+          # 提取已存在的源镜像（适配新表格结构）
           existing_source_images=$(awk '
             $0 == "'"${TABLE_TITLE}"'" { in_table=1; next }
             in_table {
@@ -106,39 +108,38 @@ jobs:
             SOURCE_IMAGE_URI="docker://$current_image:$current_tag"
             TARGET_IMAGE_URI="docker://ghcr.io/${{ env.GHCR_USER }}/$IMAGE_NAME:$target_tag"
             
+            # 同步镜像（保留核心逻辑）
             echo "源镜像: $SOURCE_IMAGE_URI"
             echo "目标镜像: $TARGET_IMAGE_URI"
             
-            # 同步镜像
             if skopeo copy --all "$SOURCE_IMAGE_URI" "$TARGET_IMAGE_URI"; then
               echo "✅ 镜像同步成功"
             else
-              echo "❌ 镜像同步失败，请检查源镜像是否存在或网络连接。"
+              echo "❌ 镜像同步失败，跳过该镜像。"
               continue
             fi
 
-            # 准备新行数据（移除 docker-compose 相关内容）
+            # 准备新行数据（移除 docker-compose 列，添加更新时间）
             pull_cmd="ghcr.io/${{ env.GHCR_USER }}/$IMAGE_NAME"
-            if [ "$target_tag" != "latest" ]; then
-              pull_cmd="$pull_cmd:$target_tag"
-            fi
+            [ "$target_tag" != "latest" ] && pull_cmd="$pull_cmd:$target_tag"
             pull_cmd="\`$pull_cmd\`"
+            # 新增更新时间（当前日期）
+            update_time=$(date +%Y-%m-%d)
             
-            # 新行数据不含 compose_file 字段
-            new_line_data="${full_image}${UNIQUE_SEPARATOR}${pull_cmd}${UNIQUE_SEPARATOR}${sync_status}${UNIQUE_SEPARATOR}"
+            # 4 列数据：源镜像 | pull 镜像 | 同步 | 更新时间
+            new_line_data="${full_image}${UNIQUE_SEPARATOR}${pull_cmd}${UNIQUE_SEPARATOR}${sync_status}${UNIQUE_SEPARATOR}${update_time}"
             NEW_ROWS_DATA+="${new_line_data}\n"
           done
 
           if [ -z "$NEW_ROWS_DATA" ]; then
-            echo "--------------------------------------------------"
             echo "没有新的镜像被添加，无需更新 README.md。"
             exit 0
           fi
 
           # --- 2. README 更新、排序与重写 ---
-          echo "--------------------------------------------------"
           echo "开始更新 README.md..."
 
+          # 提取现有表格行
           existing_rows=$(awk '
             $0 == "'"${TABLE_TITLE}"'" { in_table=1; next }
             in_table {
@@ -147,15 +148,17 @@ jobs:
             }
           ' README.md)
 
+          # 排序并生成新表格行（适配 4 列）
           sorted_table_rows=$(
             {
-              # 清理现有行的序号和多余列
+              # 清除现有行的序号
               echo "$existing_rows" | sed 's/^| [0-9]\{1,\} *|/|/'
-              # 处理新行（调整列数）
+              # 处理新行（4 列格式）
               echo -e "$NEW_ROWS_DATA" | sed '/^$/d' | awk -F"${UNIQUE_SEPARATOR}" '{printf("| %s | %s | %s | %s |\n", $1, $2, $3, $4)}'
             } | awk -F'|' '
               {
-                key = $3;
+                # 基于 pull 镜像列（第 2 列）排序
+                key = $2;
                 gsub(/`/, "", key);
                 gsub(/^[[:space:]]+|[[:space:]]+$/, "", key);
                 sub(/.*\/|:[^:]*$/, "", key);
@@ -164,7 +167,7 @@ jobs:
             ' | sort -f | sed 's/^.*@@@//' | awk 'BEGIN{count=1} {printf("| %-3s %s\n", count++, $0)}'
           )
 
-          # 生成新表格（移除 docker-compose 列）
+          # 生成新表格（4 列表头）
           {
             echo "${TABLE_TITLE}"
             echo ""
@@ -190,7 +193,7 @@ jobs:
           ' README.md > README.tmp && mv README.tmp README.md
           rm new_table.tmp
 
-          # 提交更改（仅提交 README.md）
+          # 提交更改（移除 docker-compose 目录的提交）
           git add README.md
           if git diff --staged --quiet; then
             echo "没有新的镜像或文件变更可提交。"
