@@ -47,8 +47,9 @@ jobs:
       - name: 设置 Docker Buildx
         uses: docker/setup-buildx-action@v3
       
-      - name: 同步镜像并更新 README（语法修复版）
+      - name: 同步镜像并更新 README（修复版）
         run: |
+          # 初始化 Git 配置
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git pull --rebase
@@ -79,17 +80,23 @@ jobs:
           NEW_ROWS_DATA=""
           UNIQUE_SEPARATOR="%%%"
           TABLE_TITLE="### 已同步的 Docker 镜像"
-          # 提取 README 中已存在的源镜像，避免重复同步
+          
+          # 提取 README 中已存在的源镜像（严格匹配，避免重复同步）
           existing_source_images=$(awk '
             $0 == "'"${TABLE_TITLE}"'" { in_table=1; next }
             in_table {
               if (/^\| [0-9]/) { 
+                # 提取第2列（源镜像）内容，清理空格
                 match($0, /\| *[^|]+ *\| *([^|]+) *\|/);
-                if (RSTART) { print substr($0, RSTART, RLENGTH) }
+                if (RSTART) {
+                  src_img = substr($0, RSTART+RLENGTH-length(substr($0, RSTART, RLENGTH))+2, RLENGTH-4);
+                  gsub(/^[ \t]*|[ \t]*$/, "", src_img);
+                  print src_img
+                }
               }
               if (!/^\|/ && !/^$/) { in_table=0 }
             }
-          ' README.md | sed -e 's/|//g' -e 's/^[ \t]*//;s/[ \t]*$//')
+          ' README.md)
 
           # 解析输入参数为数组
           IFS=',' read -r -a image_array <<< "${{ inputs.images }}"
@@ -117,16 +124,17 @@ jobs:
             elif [ "${{ inputs.change_tag_to_latest }}" == "是" ]; then
               target_tag="latest"
             fi
-            # 标记同步状态
+            # 标记同步状态（修复逻辑：严格按源标签判定）
             sync_status="✔️"
             if [ "$current_tag" != "latest" ] && [ "$target_tag" != "alpine" ]; then
               sync_status="❌"
             fi
 
-            # 确定目标 GHCR 镜像名（未指定则自动提取）
+            # 确定目标 GHCR 镜像名（未指定则自动提取，支持嵌套路径）
             current_ghcr_name="${ghcr_name_array[$i]}"
             if [ -z "$current_ghcr_name" ]; then 
-              IMAGE_NAME=$(basename "$current_image")
+              # 提取完整镜像路径（如 "louislam/dockge" 保留嵌套结构）
+              IMAGE_NAME=$(echo "$current_image" | awk -F'/' '{if(NF>1) print $0; else print $1}')
             else 
               IMAGE_NAME="$current_ghcr_name"
             fi
@@ -164,10 +172,10 @@ jobs:
             mkdir -p "$compose_dir"
             # 复制模板并替换镜像地址（用 | 分隔符避免 / 冲突）
             cp docker-compose/example.yaml "$compose_file_path"
-            sed -i "s|ghcr.io\/${{ env.GHCR_USER }}\/IMAGE:TAG|$TARGET_IMAGE_URI|g" "$compose_file_path"
+            sed -i "s|ghcr.io\/${{ env.GHCR_USER }}\/IMAGE:TAG|${TARGET_IMAGE_URI#docker://}|g" "$compose_file_path"
             echo "✅ 已生成 compose 文件：$compose_file_path"
 
-            # --- 准备 README 表格数据 ---
+            # --- 准备 README 表格数据（标准化格式）---
             pull_cmd="ghcr.io/${{ env.GHCR_USER }}/$IMAGE_NAME"
             if [ "$target_tag" != "latest" ]; then
               pull_cmd="$pull_cmd:$target_tag"
@@ -177,8 +185,8 @@ jobs:
             compose_file="[yaml](https://github.com/${{ github.repository }}/blob/main/$compose_file_path)"
             # 记录 UTC 更新时间
             update_time=$(date -u "+%Y-%m-%d %H:%M:%S")
-            # 拼接表格行数据（确保 5 列完整）
-            new_line_data="${full_image}${UNIQUE_SEPARATOR}${pull_cmd}${UNIQUE_SEPARATOR}${compose_file}${UNIQUE_SEPARATOR}${sync_status}${UNIQUE_SEPARATOR}${update_time}"
+            # 拼接表格行数据（确保 5 列完整，清理空格）
+            new_line_data="$(echo "$full_image" | xargs)${UNIQUE_SEPARATOR}$(echo "$pull_cmd" | xargs)${UNIQUE_SEPARATOR}$(echo "$compose_file" | xargs)${UNIQUE_SEPARATOR}$(echo "$sync_status" | xargs)${UNIQUE_SEPARATOR}$(echo "$update_time" | xargs)"
             NEW_ROWS_DATA+="${new_line_data}\n"
           done
 
@@ -189,10 +197,10 @@ jobs:
             exit 0
           fi
 
-          # --- 3. 更新 README 表格（修复语法错误：补充闭合双引号）---
+          # --- 3. 更新 README 表格（核心修复：标准化格式+排序）---
           echo "--------------------------------------------------"
           echo "开始更新 README.md..."
-          # 提取已有表格行
+          # 提取已有表格行（仅保留有效数据行）
           existing_rows=$(awk '
             $0 == "'"${TABLE_TITLE}"'" { in_table=1; next }
             in_table {
@@ -200,34 +208,57 @@ jobs:
               if (!/^\|/ && !/^$/) { in_table=0 }
             }
           ' README.md)
-          # 合并新旧行并按镜像名排序（不区分大小写）
+
+          # 合并新旧行并按镜像名排序（修复版：解决格式错乱+序号对齐）
           sorted_table_rows=$(
             {
-              # 清理已有行的序号
-              echo "$existing_rows" | sed 's/^| [0-9]\{1,\} *|/|/'
-              # 解析新行数据
-              echo -e "$NEW_ROWS_DATA" | sed '/^$/d' | awk -F"${UNIQUE_SEPARATOR}" '{
-                printf("| %s | %s | %s | %s | %s |\n", $1, $2, $3, $4, $5)
-              }'
+              # 清理已有行：保留第2-6列，标准化格式
+              echo "$existing_rows" | awk -F'|' '
+                BEGIN{OFS="|"}
+                {
+                  for (i=2; i<=6; i++) { gsub(/^[ \t]+|[ \t]+$/, "", $i) }
+                  if ($2 != "") { printf("| %s | %s | %s | %s | %s |\n", $2, $3, $4, $5, $6) }
+                }
+              # 处理新行：强制5列格式，清理空格
+              echo -e "$NEW_ROWS_DATA" | sed '/^$/d' | awk -F"${UNIQUE_SEPARATOR}" '
+                BEGIN{OFS="|"}
+                {
+                  for (i=1; i<=5; i++) { gsub(/^[ \t]+|[ \t]+$/, "", $i) }
+                  printf("| %s | %s | %s | %s | %s |\n", $1, $2, $3, $4, $5)
+                }
+              '
             } | awk -F'|' '
+              # 提取排序键：按镜像名（兼容嵌套路径）
               {
-                key = $3;
-                gsub(/`/, "", key);
-                gsub(/^[[:space:]]+|[[:space:]]+$/, "", key);
-                sub(/.*\/|:[^:]*$/, "", key);  # 提取镜像名作为排序键
-                print key "@@@" $0;
+                pull_col = $3;
+                gsub(/`/, "", pull_col);
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", pull_col);
+                # 提取 "USER/镜像名" 部分（如 "ghcr.io/tardlk/louislam/dockge:1" → "louislam/dockge"）
+                match(pull_col, /[^\/]+\/[^\/]+(:[^:]+)?$/);
+                if (RSTART) {
+                  img_key = substr(pull_col, RSTART);
+                  gsub(/:[^:]+$/, "", img_key);
+                  gsub(/^[^\/]+\//, "", img_key);
+                } else {
+                  img_key = pull_col;
+                }
+                print tolower(img_key) "@@@" $0;
               }
-            ' | sort -f | sed 's/^.*@@@//' | awk '
-              BEGIN{count=1} {printf("| %-3d %s\n", count++, $0)}  # 重新添加序号
+            ' | sort | sed 's/^.*@@@//' | awk '
+              # 重新添加序号，标准化间距（与表头对齐）
+              BEGIN{count=1; OFS="|"}
+              {
+                printf("| %-2d | %s\n", count++, substr($0, 3))
+              }
             '
           )
 
-          # 生成新表格（关键修复：给表头行补充结尾的闭合双引号）
+          # 生成新表格（标准化表头+内容）
           {
             echo "${TABLE_TITLE}"
             echo ""
-            echo "|   | 源镜像 | pull 镜像 | docker-compose | 同步 | 更新时间（UTC） |"
-            echo "|----|----------|-----------|----------------|------|----------------|"  # 此处补充了闭合双引号
+            echo "|   | 源镜像                     | pull 镜像                              | docker-compose                                                                 | 同步 | 更新时间（UTC）       |"
+            echo "|----|----------------------------|---------------------------------------|--------------------------------------------------------------------------------|------|-----------------------|"
             echo "$sorted_table_rows"
           } > new_table.tmp
 
@@ -248,12 +279,24 @@ jobs:
           ' README.md > README.tmp && mv README.tmp README.md
           rm new_table.tmp
 
-          # --- 4. 提交更改到仓库 ---
+          # --- 4. 表格格式校验（新增：避免错乱提交）---
+          echo "🔍 校验 README 表格格式..."
+          # 正常行应包含 7 个 "|"（对应 5 列数据+序号列）
+          invalid_rows=$(grep -n "|" README.md | awk -F'|' 'NF != 7' | wc -l)
+          if [ "$invalid_rows" -gt 0 ]; then
+            echo "❌ 发现 $invalid_rows 行表格格式错误（缺失列），终止提交。"
+            grep -n "|" README.md | awk -F'|' 'NF != 7'
+            exit 1
+          fi
+
+          # --- 5. 提交更改到仓库 ---
           git add README.md docker-compose/
           if git diff --staged --quiet; then
             echo "ℹ️ 没有新的镜像或文件变更可提交。"
           else
-            git commit -m "chore(sync): 同步新镜像 $full_image 并更新 README"
+            # 提交信息包含所有新同步的镜像（避免重复显示单个镜像）
+            new_images=$(echo -e "$NEW_ROWS_DATA" | sed '/^$/d' | cut -d"${UNIQUE_SEPARATOR}" -f1 | tr '\n' ' ')
+            git commit -m "chore(sync): 同步新镜像 $new_images 并更新 README"
             git push
             echo "✅ 所有变更已提交到仓库"
           fi
