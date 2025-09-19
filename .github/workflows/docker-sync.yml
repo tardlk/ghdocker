@@ -47,7 +47,7 @@ jobs:
       - name: 设置 Docker Buildx
         uses: docker/setup-buildx-action@v3
       
-      - name: 同步镜像并更新 README（最终修复版）
+      - name: 同步镜像并更新 README（语法修复版）
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -72,7 +72,6 @@ jobs:
               # environment:
               #   - TZ=Asia/Shanghai
           EOF
-            # 替换模板中的 USER 为当前 GHCR 用户
             sed -i "s/ghcr.io\/USER/ghcr.io\/${{ env.GHCR_USER }}/g" docker-compose/example.yaml
           fi
 
@@ -158,11 +157,11 @@ jobs:
               continue
             fi
 
-            # --- 生成 compose 文件（关键修复：支持嵌套目录）---
+            # --- 生成 compose 文件（支持嵌套目录）---
             compose_file_path="docker-compose/$IMAGE_NAME.yaml"
             # 提取父目录并创建（如 docker-compose/louislam）
             compose_dir=$(dirname "$compose_file_path")
-            mkdir -p "$compose_dir"  # 自动创建多级目录，避免路径不存在错误
+            mkdir -p "$compose_dir"
             # 复制模板并替换镜像地址（用 | 分隔符避免 / 冲突）
             cp docker-compose/example.yaml "$compose_file_path"
             sed -i "s|ghcr.io\/${{ env.GHCR_USER }}\/IMAGE:TAG|$TARGET_IMAGE_URI|g" "$compose_file_path"
@@ -190,7 +189,7 @@ jobs:
             exit 0
           fi
 
-          # --- 3. 更新 README 表格（确保格式正确）---
+          # --- 3. 更新 README 表格（修复语法错误：补充闭合双引号）---
           echo "--------------------------------------------------"
           echo "开始更新 README.md..."
           # 提取已有表格行
@@ -223,12 +222,12 @@ jobs:
             '
           )
 
-          # 生成新表格
+          # 生成新表格（关键修复：给表头行补充结尾的闭合双引号）
           {
             echo "${TABLE_TITLE}"
             echo ""
             echo "|   | 源镜像 | pull 镜像 | docker-compose | 同步 | 更新时间（UTC） |"
-            echo "|----|----------|-----------|----------------|------|----------------|
+            echo "|----|----------|-----------|----------------|------|----------------|"  # 此处补充了闭合双引号
             echo "$sorted_table_rows"
           } > new_table.tmp
 
