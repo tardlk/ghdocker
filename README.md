@@ -9,7 +9,6 @@
 ### 已同步的 Docker 镜像
 
 |   | 源镜像 | pull 镜像 | 同步 | 更新时间 |
-|----|--------|-----------|------|--------|
-|  1 | library/nginx:latest | `ghcr.io/你的用户名/nginx` | ✔️ | 2025-09-19 |
-|  2 | library/alpine:3.18 | `ghcr.io/你的用户名/alpine:alpine` | ✔️ | 2025-09-19 |
-|  3 | library/busybox:latest | `ghcr.io/你的用户名/busybox` | ❌ | 2025-09-19 |
+| ---- | -------- | --------- | ---- | -------- |
+| 1   
+| 2   | jxxghp/moviepilot-v2:2.8.0 | `ghcr.io/tardlk/jxxghp/moviepilot-v2:2.8.0` | ✔️ |  |
