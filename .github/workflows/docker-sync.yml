@@ -61,12 +61,10 @@ jobs:
           UNIQUE_SEPARATOR="%%%"
           TABLE_TITLE="### 已同步的 Docker 镜像"
 
-          # 提取已存在的源镜像（避免重复）
           existing_source_images=$(awk '
             $0 == "'"${TABLE_TITLE}"'" { in_table=1; next }
             in_table {
               if (/^\| [0-9]/) { 
-                # 提取第二列（源镜像）
                 match($0, /\| *[^|]+ *\| *([^|]+) *\|/);
                 if (RSTART) { print substr($0, RSTART, RLENGTH) }
               }
@@ -81,7 +79,6 @@ jobs:
             full_image=$(echo "${image_array[$i]}" | xargs)
             if [ -z "$full_image" ]; then continue; fi
 
-            # 跳过已存在的镜像
             if echo "$existing_source_images" | grep -qFx "$full_image"; then
               echo "镜像 $full_image 已存在于 README.md，跳过。"
               continue
@@ -93,14 +90,12 @@ jobs:
             current_tag=$(echo "$full_image" | cut -s -d':' -f2); [ -z "$current_tag" ] && current_tag="latest"
             target_tag="$current_tag"; [[ "$current_tag" =~ "alpine" ]] && target_tag="alpine" || { [ "${{ inputs.change_tag_to_latest }}" == "是" ] && target_tag="latest"; }
             
-            # 同步状态判断
             if [ "$current_tag" == "latest" ] || [ "$target_tag" == "alpine" ]; then 
               sync_status="✔️"
             else 
               sync_status="❌"
             fi
             
-            # 确定目标镜像名称
             current_ghcr_name="${ghcr_name_array[$i]}"
             if [ -z "$current_ghcr_name" ]; then 
               IMAGE_NAME=$(basename "$current_image")
@@ -108,84 +103,75 @@ jobs:
               IMAGE_NAME="$current_ghcr_name"
             fi
 
-            # 同步镜像
             SOURCE_IMAGE_URI="docker://$current_image:$current_tag"
             TARGET_IMAGE_URI="docker://ghcr.io/${{ env.GHCR_USER }}/$IMAGE_NAME:$target_tag"
+            
             echo "源镜像: $SOURCE_IMAGE_URI"
             echo "目标镜像: $TARGET_IMAGE_URI"
             
-            if ! skopeo copy --all "$SOURCE_IMAGE_URI" "$TARGET_IMAGE_URI"; then
-              echo "❌ 镜像同步失败，跳过该镜像。"
+            if skopeo copy --all "$SOURCE_IMAGE_URI" "$TARGET_IMAGE_URI"; then
+              echo "✅ 镜像同步成功"
+            else
+              echo "❌ 镜像同步失败，请检查源镜像是否存在或网络连接。"
               continue
             fi
 
-            # 准备新行数据（4 数据列：源镜像、pull镜像、同步、更新时间）
+            # 准备新行的数据（移除 docker-compose 相关字段）
             pull_cmd="ghcr.io/${{ env.GHCR_USER }}/$IMAGE_NAME"
-            [ "$target_tag" != "latest" ] && pull_cmd="$pull_cmd:$target_tag"
+            if [ "$target_tag" != "latest" ]; then
+              pull_cmd="$pull_cmd:$target_tag"
+            fi
             pull_cmd="\`$pull_cmd\`"
-            # 强制设置更新时间为当前日期
-            update_time=$(date +%Y-%m-%d)
             
-            # 拼接新行（不含序号，序号后续自动生成）
-            new_line_data="${full_image}${UNIQUE_SEPARATOR}${pull_cmd}${UNIQUE_SEPARATOR}${sync_status}${UNIQUE_SEPARATOR}${update_time}"
+            # 新行数据：源镜像 | pull镜像 | 同步状态 | 更新时间
+            new_line_data="${full_image}${UNIQUE_SEPARATOR}${pull_cmd}${UNIQUE_SEPARATOR}${sync_status}${UNIQUE_SEPARATOR}"
             NEW_ROWS_DATA+="${new_line_data}\n"
           done
 
           if [ -z "$NEW_ROWS_DATA" ]; then
+            echo "--------------------------------------------------"
             echo "没有新的镜像被添加，无需更新 README.md。"
             exit 0
           fi
 
-          # --- 2. 生成新表格 ---
+          # --- 2. README 更新、排序与重写 ---
+          echo "--------------------------------------------------"
           echo "开始更新 README.md..."
 
-          # 提取现有表格行（不含序号）
           existing_rows=$(awk '
             $0 == "'"${TABLE_TITLE}"'" { in_table=1; next }
             in_table {
-              if (/^\| [0-9]/) { 
-                # 移除现有序号，保留数据列
-                sub(/^| [0-9]+ *|/, "| |"); 
-                print 
-              }
+              if (/^\| [0-9]/) { print }
               if (!/^\|/ && !/^$/) { in_table=0 }
             }
           ' README.md)
 
-          # 合并现有行和新行，排序后添加序号
           sorted_table_rows=$(
             {
-              # 处理现有行
-              echo "$existing_rows" | sed '/^$/d' | awk -F'|' '{
-                # 提取源镜像作为排序键
-                key = $2; gsub(/^[ \t]+|[ \t]+$/, "", key);
+              # 处理现有行（移除原 docker-compose 列）
+              echo "$existing_rows" | sed -E 's/(\| [^|]*) \| [^|]*/\1/' | sed 's/^| [0-9]\{1,\} *|/|/'
+              # 处理新行
+              echo -e "$NEW_ROWS_DATA" | sed '/^$/d' | awk -F"${UNIQUE_SEPARATOR}" '{printf("| %s | %s | %s | %s |\n", $1, $2, $3, $4)}'
+            } | awk -F'|' '
+              {
+                key = $3;
+                gsub(/`/, "", key);
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", key);
+                sub(/.*\/|:[^:]*$/, "", key);
                 print key "@@@" $0;
-              }'
-              # 处理新行（转换为表格格式）
-              echo -e "$NEW_ROWS_DATA" | sed '/^$/d' | awk -F"${UNIQUE_SEPARATOR}" '{
-                printf("| | %s | %s | %s | %s |\n", $1, $2, $3, $4);
-              }' | awk -F'|' '{
-                key = $2; gsub(/^[ \t]+|[ \t]+$/, "", key);
-                print key "@@@" $0;
-              }'
-            } | sort -f | sed 's/^.*@@@//' | awk 'BEGIN{count=1} {
-              # 替换空序号为递增数字
-              sub(/^| |/, "| " count " |"); 
-              print; 
-              count++
-            }'
+              }
+            ' | sort -f | sed 's/^.*@@@//' | awk 'BEGIN{count=1} {printf("| %-3s %s\n", count++, $0)}'
           )
 
-          # 生成完整表格
           {
             echo "${TABLE_TITLE}"
             echo ""
+            # 移除 docker-compose 列标题
             echo "|   | 源镜像 | pull 镜像 | 同步 | 更新时间 |"
             echo "| ---- | -------- | --------- | ---- | -------- |"
             echo "$sorted_table_rows"
           } > new_table.tmp
 
-          # 替换 README 中的表格
           awk '
             BEGIN { replaced=0 }
             $0 == "'"${TABLE_TITLE}"'" && !replaced {
@@ -202,11 +188,11 @@ jobs:
           ' README.md > README.tmp && mv README.tmp README.md
           rm new_table.tmp
 
-          # 提交更改
+          # 提交更改（移除 docker-compose 目录）
           git add README.md
           if git diff --staged --quiet; then
             echo "没有新的镜像或文件变更可提交。"
           else
-            git commit -m "chore(sync): 同步新镜像并更新README"
+            git commit -m "chore(sync): 同步新镜像并自动排序更新README"
             git push
           fi
