@@ -47,7 +47,7 @@ jobs:
       - name: 设置 Docker Buildx
         uses: docker/setup-buildx-action@v3
       
-      - name: 同步镜像并更新 README（修复版）
+      - name: 同步镜像并更新 README（修复语法报错版）
         run: |
           # 初始化 Git 配置
           git config --global user.name "github-actions[bot]"
@@ -124,7 +124,7 @@ jobs:
             elif [ "${{ inputs.change_tag_to_latest }}" == "是" ]; then
               target_tag="latest"
             fi
-            # 标记同步状态（修复逻辑：严格按源标签判定）
+            # 标记同步状态（严格按源标签判定）
             sync_status="✔️"
             if [ "$current_tag" != "latest" ] && [ "$target_tag" != "alpine" ]; then
               sync_status="❌"
@@ -197,7 +197,7 @@ jobs:
             exit 0
           fi
 
-          # --- 3. 更新 README 表格（核心修复：标准化格式+排序）---
+          # --- 3. 更新 README 表格（核心修复：兼容 mawk 语法）---
           echo "--------------------------------------------------"
           echo "开始更新 README.md..."
           # 提取已有表格行（仅保留有效数据行）
@@ -209,7 +209,7 @@ jobs:
             }
           ' README.md)
 
-          # 合并新旧行并按镜像名排序（修复版：解决格式错乱+序号对齐）
+          # 合并新旧行并按镜像名排序（修复版：解决 mawk 语法报错+格式错乱）
           sorted_table_rows=$(
             {
               # 清理已有行：保留第2-6列，标准化格式
@@ -228,20 +228,23 @@ jobs:
                 }
               '
             } | awk -F'|' '
-              # 提取排序键：按镜像名（兼容嵌套路径）
+              # 提取排序键：按镜像名（兼容嵌套路径，兼容所有 awk 版本）
               {
                 pull_col = $3;
                 gsub(/`/, "", pull_col);
                 gsub(/^[[:space:]]+|[[:space:]]+$/, "", pull_col);
-                # 提取 "USER/镜像名" 部分（如 "ghcr.io/tardlk/louislam/dockge:1" → "louislam/dockge"）
-                match(pull_col, /[^\/]+\/[^\/]+(:[^:]+)?$/);
-                if (RSTART) {
-                  img_key = substr(pull_col, RSTART);
-                  gsub(/:[^:]+$/, "", img_key);
-                  gsub(/^[^\/]+\//, "", img_key);
-                } else {
-                  img_key = pull_col;
+                # 步骤1：从右往左取最后两个 "/" 之间的内容（如 "a/b/c:d" → "b/c:d"）
+                img_part = pull_col;
+                n = split(img_part, arr, "/");
+                if (n >= 2) {
+                  img_part = arr[n-1] "/" arr[n];
                 }
+                # 步骤2：去掉标签（如 "b/c:d" → "b/c"）
+                gsub(/:[^:]+$/, "", img_part);
+                # 步骤3：去掉前缀 USER/（如 "louislam/dockge" → "dockge"）
+                gsub(/^[^\/]+\//, "", img_part);
+                # 若提取失败，用原 pull_col 作为键
+                img_key = (img_part == "") ? pull_col : img_part;
                 print tolower(img_key) "@@@" $0;
               }
             ' | sort | sed 's/^.*@@@//' | awk '
@@ -279,7 +282,7 @@ jobs:
           ' README.md > README.tmp && mv README.tmp README.md
           rm new_table.tmp
 
-          # --- 4. 表格格式校验（新增：避免错乱提交）---
+          # --- 4. 表格格式校验（避免错乱提交）---
           echo "🔍 校验 README 表格格式..."
           # 正常行应包含 7 个 "|"（对应 5 列数据+序号列）
           invalid_rows=$(grep -n "|" README.md | awk -F'|' 'NF != 7' | wc -l)
@@ -294,7 +297,7 @@ jobs:
           if git diff --staged --quiet; then
             echo "ℹ️ 没有新的镜像或文件变更可提交。"
           else
-            # 提交信息包含所有新同步的镜像（避免重复显示单个镜像）
+            # 提交信息包含所有新同步的镜像
             new_images=$(echo -e "$NEW_ROWS_DATA" | sed '/^$/d' | cut -d"${UNIQUE_SEPARATOR}" -f1 | tr '\n' ' ')
             git commit -m "chore(sync): 同步新镜像 $new_images 并更新 README"
             git push
