@@ -122,9 +122,7 @@ jobs:
             fi
             # --- 同步逻辑结束 ---
 
-            # 创建 docker-compose.yaml 文件
-            mkdir -p docker-compose
-            cp docker-compose/example.yaml "docker-compose/$IMAGE_NAME.yaml"
+            # （已移除 docker-compose/example.yaml 相关步骤）
 
             # 准备新行的数据
             pull_cmd="ghcr.io/${{ env.GHCR_USER }}/$IMAGE_NAME"
