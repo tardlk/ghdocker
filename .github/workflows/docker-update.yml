@@ -22,7 +22,6 @@ jobs:
       - name: 2. 安装依赖
         run: sudo apt-get update && sudo apt-get install -y jq skopeo
 
-      # 步骤 3-7 保持不变，它们是正确的
       - name: 3. 提取目标镜像名称
         id: extract-target-images
         run: |
@@ -30,10 +29,10 @@ jobs:
           awk -F '|' '
           /^### 已同步的 Docker 镜像/ {capture=1; next}
           capture && /^\| [0-9]+/ {
-              sync_col=$6; gsub(/^[ \t]+|[ \t]+$/, "", sync_col);
+              sync_col=$4; gsub(/^[ \t]+|[ \t]+$/, "", sync_col);
               if (sync_col != "✔️") next;
-              gsub(/^[ \t]+|[ \t]+$/, "", $4); gsub(/`/, "", $4);
-              print $4
+              gsub(/^[ \t]+|[ \t]+$/, "", $3); gsub(/`/, "", $3);
+              print $3
           }
           /^### / && capture && !/已同步/ {capture=0}
           ' README.md | grep -vE '^源镜像$|^-+$' | sed '/^$/d' | \
@@ -48,10 +47,10 @@ jobs:
           awk -F '|' '
           /^### 已同步的 Docker 镜像/ {capture=1; next}
           capture && /^\| [0-9]+/ {
-              sync_col=$6; gsub(/^[ \t]+|[ \t]+$/, "", sync_col);
+              sync_col=$4; gsub(/^[ \t]+|[ \t]+$/, "", sync_col);
               if (sync_col != "✔️") next;
-              gsub(/^[ \t]+|[ \t]+$/, "", $3); gsub(/`/, "", $3);
-              print $3
+              gsub(/^[ \t]+|[ \t]+$/, "", $2);
+              print $2
           }
           /^### / && capture && !/已同步/ {capture=0}
           ' README.md | grep -vE '^源镜像$|^-+$' | sed '/^$/d' > source-image-list.txt
@@ -94,19 +93,17 @@ jobs:
       - name: 8. 检查并同步镜像
         env:
           GHCR_USER: ${{ github.repository_owner }}
-          # 将 Docker 配置文件路径也设为环境变量，方便 skopeo 调用
           DOCKER_CONFIG: /home/runner/.docker
         run: |
           set -eo pipefail
 
-          # 函数：从 manifest 内容中为指定架构提取唯一的 digest
+          # 从 manifest 内容中为指定架构提取唯一的 digest
           get_digest_for_arch() {
             local manifest_content=$1
             local arch_name=$2
             if [ -z "$manifest_content" ]; then echo ""; return; fi
             
             if echo "$manifest_content" | jq -e '.manifests' > /dev/null 2>&1; then
-              # 精确匹配架构，并处理 arm/v7 和 arm64/v8 变体
               echo "$manifest_content" | jq -r --arg arch "$arch_name" '
                 .manifests[] | 
                 select(
@@ -115,7 +112,6 @@ jobs:
                   ($arch == "arm64" and .platform.architecture == "arm64" and .platform.variant? == "v8")
                 ) | .digest' | head -n 1
             else
-              # 单架构镜像
               echo "$manifest_content" | jq -r '.digest // empty'
             fi
           }
@@ -138,7 +134,7 @@ jobs:
             SOURCE_IMAGE_URI="docker://$source_image_name_tag"
             TARGET_IMAGE_URI="docker://$target_image_name_tag"
 
-            # 【修改点 1】增强 skopeo inspect 的错误处理，并添加 --authfile 参数
+            # skopeo inspect 源镜像
             if ! source_manifest=$(skopeo inspect --authfile ${DOCKER_CONFIG}/config.json --raw "$SOURCE_IMAGE_URI" 2>/dev/null); then
               echo "❌ 错误：执行 'skopeo inspect' 失败 (可能是网络问题或镜像不存在)，已跳过 '$SOURCE_IMAGE_URI'。"
               continue
@@ -149,11 +145,10 @@ jobs:
               continue
             fi
             
-            # 【修改点 2】为目标镜像的 inspect 也添加认证参数，并优化逻辑
+            # inspect 目标镜像
             target_manifest=$(skopeo inspect --authfile ${DOCKER_CONFIG}/config.json --raw "$TARGET_IMAGE_URI" 2>/dev/null || echo "")
             
-            # 确定要检查的架构列表
-            ARCHS_TO_CHECK="amd64 arm64 arm" # 我们只关心这几个主流架构
+            ARCHS_TO_CHECK="amd64 arm64 arm"
             
             need_update=false
             if [ -z "$target_manifest" ]; then
@@ -162,7 +157,6 @@ jobs:
             else
               for arch in $ARCHS_TO_CHECK; do
                 source_digest_for_arch=$(get_digest_for_arch "$source_manifest" "$arch")
-                # 如果源镜像压根不支持这个架构，我们就没必要比较了
                 if [ -z "$source_digest_for_arch" ]; then continue; fi
 
                 target_digest_for_arch=$(get_digest_for_arch "$target_manifest" "$arch")
@@ -183,7 +177,6 @@ jobs:
 
             echo "开始使用 skopeo copy 同步..."
 
-            # 【修改点 3】为 skopeo copy 添加 --all 和 --authfile 参数
             if skopeo copy --all --authfile ${DOCKER_CONFIG}/config.json "$SOURCE_IMAGE_URI" "$TARGET_IMAGE_URI"; then
               echo "✅ 镜像同步成功: $target_image_name_tag"
             else
@@ -191,11 +184,11 @@ jobs:
               continue
             fi
 
-            # 更新 README.md
+            # 更新 README.md 更新时间
             today=$(date +'%Y-%m-%d')
             awk -F'|' -v img_name="$target_image" -v date="$today" '
               BEGIN{OFS=FS}
-              $4 ~ "`ghcr.io/.*/" img_name "(:[^`]+)?`" && $6 ~ /✔️/ { $7 = " " date " "; print; next }
+              $3 ~ "`ghcr.io/.*/" img_name "(:[^`]+)?`" && $4 ~ /✔️/ { $5 = " " date " "; print; next }
               {print}
             ' README.md > README.tmp && mv README.tmp README.md
             
