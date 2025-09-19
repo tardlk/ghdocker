@@ -16,5 +16,3 @@
 | ---- | -------- | --------- | ---- | -------- |
 | 1 | `nginx:latest` | `ghcr.io/sqing33/nginx` | ✔️ | 2023-10-01 12:00 |
 | 2 | `alpine:3.18` | `ghcr.io/sqing33/alpine:3.18` | ✔️ | 2023-10-01 12:05 |
-
-<!-- AUTO-GENERATED-IMAGE-TABLE-END -->
