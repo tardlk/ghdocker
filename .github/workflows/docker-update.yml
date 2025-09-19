@@ -22,13 +22,13 @@ jobs:
       - name: 2. 安装依赖
         run: sudo apt-get update && sudo apt-get install -y jq skopeo
 
-      - name: 3. 提取目标镜像名称
+      - name: 3. 提取目标镜像名称（自动宽容表格空格格式）
         id: extract-target-images
         run: |
           owner_lowercase=$(echo "${{ github.repository_owner }}" | tr 'A-Z' 'a-z')
           awk -F '|' '
           /^### 已同步的 Docker 镜像/ {capture=1; next}
-          capture && /^\| [0-9]+/ {
+          capture && /^\| *[0-9]+/ {
               sync_col=$4; gsub(/^[ \t]+|[ \t]+$/, "", sync_col);
               if (sync_col != "✔️") next;
               gsub(/^[ \t]+|[ \t]+$/, "", $3); gsub(/`/, "", $3);
@@ -41,12 +41,12 @@ jobs:
           echo "===== 将要检查的目标镜像列表 ====="
           cat target-image-list.txt
 
-      - name: 4. 提取源镜像名称
+      - name: 4. 提取源镜像名称（自动宽容表格空格格式）
         id: extract-source-images
         run: |
           awk -F '|' '
           /^### 已同步的 Docker 镜像/ {capture=1; next}
-          capture && /^\| [0-9]+/ {
+          capture && /^\| *[0-9]+/ {
               sync_col=$4; gsub(/^[ \t]+|[ \t]+$/, "", sync_col);
               if (sync_col != "✔️") next;
               gsub(/^[ \t]+|[ \t]+$/, "", $2);
