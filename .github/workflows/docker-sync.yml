@@ -195,7 +195,7 @@ jobs:
           rm new_table.tmp
 
           # 提交更改
-          git add README.md docker-compose/
+          git add README.md
           if git diff --staged --quiet; then
             echo "没有新的镜像或文件变更可提交。"
           else
