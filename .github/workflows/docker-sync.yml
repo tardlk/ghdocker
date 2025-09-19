@@ -34,7 +34,6 @@ jobs:
       - name: 检出仓库
         uses: actions/checkout@v4
         with:
-          # 使用 token 以便后续可以推送更改
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 设置 GHCR_USER 环境变量
@@ -84,13 +83,13 @@ jobs:
               echo "镜像 $full_image 已存在于 README.md，跳过。"
               continue
             fi
-            
+
             echo "--------------------------------------------------"
             echo "===== 开始处理 $full_image ====="
             current_image=$(echo "$full_image" | cut -d':' -f1)
             current_tag=$(echo "$full_image" | cut -s -d':' -f2); [ -z "$current_tag" ] && current_tag="latest"
 
-            # 标签判断逻辑拆开更安全
+            # 标签判断逻辑更安全
             target_tag="$current_tag"
             if [[ "$current_tag" =~ "alpine" ]]; then
               target_tag="alpine"
@@ -100,7 +99,6 @@ jobs:
 
             # 同步状态，建议用 skopeo 成功/失败结果决定
             sync_status=""
-            
             current_ghcr_name="${ghcr_name_array[$i]}"
             if [ -z "$current_ghcr_name" ]; then 
               IMAGE_NAME=$(basename "$current_image")
@@ -110,10 +108,10 @@ jobs:
 
             SOURCE_IMAGE_URI="docker://$current_image:$current_tag"
             TARGET_IMAGE_URI="docker://ghcr.io/${{ env.GHCR_USER }}/$IMAGE_NAME:$target_tag"
-            
+
             echo "源镜像: $SOURCE_IMAGE_URI"
             echo "目标镜像: $TARGET_IMAGE_URI"
-            
+
             if skopeo copy --all "$SOURCE_IMAGE_URI" "$TARGET_IMAGE_URI"; then
               echo "✅ 镜像同步成功"
               sync_status="✔️"
@@ -129,10 +127,14 @@ jobs:
               pull_cmd="$pull_cmd:$target_tag"
             fi
             pull_cmd="\`$pull_cmd\`"
-            
-            # 生成新行数据（已移除 compose_file）
+
+            # 生成新行数据（无首行空白）
             new_line_data="${full_image}${UNIQUE_SEPARATOR}${pull_cmd}${UNIQUE_SEPARATOR}${sync_status}${UNIQUE_SEPARATOR}"
-            NEW_ROWS_DATA+="${new_line_data}\n"
+            if [ -z "$NEW_ROWS_DATA" ]; then
+              NEW_ROWS_DATA="${new_line_data}"
+            else
+              NEW_ROWS_DATA="${NEW_ROWS_DATA}\n${new_line_data}"
+            fi
           done
 
           if [ -z "$NEW_ROWS_DATA" ]; then
