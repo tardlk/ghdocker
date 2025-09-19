@@ -89,13 +89,17 @@ jobs:
             echo "===== 开始处理 $full_image ====="
             current_image=$(echo "$full_image" | cut -d':' -f1)
             current_tag=$(echo "$full_image" | cut -s -d':' -f2); [ -z "$current_tag" ] && current_tag="latest"
-            target_tag="$current_tag"; [[ "$current_tag" =~ "alpine" ]] && target_tag="alpine" || { [ "${{ inputs.change_tag_to_latest }}" == "是" ] && target_tag="latest"; }
-            
-            if [ "$current_tag" == "latest" ] || [ "$target_tag" == "alpine" ]; then 
-              sync_status="✔️"
-            else 
-              sync_status="❌"
+
+            # 标签判断逻辑拆开更安全
+            target_tag="$current_tag"
+            if [[ "$current_tag" =~ "alpine" ]]; then
+              target_tag="alpine"
+            elif [ "${{ inputs.change_tag_to_latest }}" == "是" ]; then
+              target_tag="latest"
             fi
+
+            # 同步状态，建议用 skopeo 成功/失败结果决定
+            sync_status=""
             
             current_ghcr_name="${ghcr_name_array[$i]}"
             if [ -z "$current_ghcr_name" ]; then 
@@ -107,33 +111,27 @@ jobs:
             SOURCE_IMAGE_URI="docker://$current_image:$current_tag"
             TARGET_IMAGE_URI="docker://ghcr.io/${{ env.GHCR_USER }}/$IMAGE_NAME:$target_tag"
             
-            # --- 这是补充的完整同步逻辑 ---
             echo "源镜像: $SOURCE_IMAGE_URI"
             echo "目标镜像: $TARGET_IMAGE_URI"
             
-            # 使用 skopeo copy 进行同步，--all 参数会自动处理多架构
-            # 增加错误处理，如果同步失败则打印错误并继续
             if skopeo copy --all "$SOURCE_IMAGE_URI" "$TARGET_IMAGE_URI"; then
               echo "✅ 镜像同步成功"
+              sync_status="✔️"
             else
               echo "❌ 镜像同步失败，请检查源镜像是否存在或网络连接。"
-              # 同步失败，可以选择跳过该镜像的后续处理
+              sync_status="❌"
               continue
             fi
-            # --- 同步逻辑结束 ---
 
-            # （已移除 docker-compose/example.yaml 相关步骤）
-
-            # 准备新行的数据
+            # pull 命令字符串
             pull_cmd="ghcr.io/${{ env.GHCR_USER }}/$IMAGE_NAME"
             if [ "$target_tag" != "latest" ]; then
               pull_cmd="$pull_cmd:$target_tag"
             fi
             pull_cmd="\`$pull_cmd\`"
-            compose_file="[yaml](https://github.com/${{ github.repository }}/blob/main/docker-compose/$IMAGE_NAME.yaml)"
             
-            # 新增一列更新时间，默认空
-            new_line_data="${full_image}${UNIQUE_SEPARATOR}${pull_cmd}${UNIQUE_SEPARATOR}${compose_file}${UNIQUE_SEPARATOR}${sync_status}${UNIQUE_SEPARATOR}"
+            # 生成新行数据（已移除 compose_file）
+            new_line_data="${full_image}${UNIQUE_SEPARATOR}${pull_cmd}${UNIQUE_SEPARATOR}${sync_status}${UNIQUE_SEPARATOR}"
             NEW_ROWS_DATA+="${new_line_data}\n"
           done
 
@@ -158,7 +156,7 @@ jobs:
           sorted_table_rows=$(
             {
               echo "$existing_rows" | sed 's/^| [0-9]\{1,\} *|/|/'
-              echo -e "$NEW_ROWS_DATA" | sed '/^$/d' | awk -F"${UNIQUE_SEPARATOR}" '{printf("| %s | %s | %s | %s | %s |\n", $1, $2, $3, $4, $5)}'
+              echo -e "$NEW_ROWS_DATA" | sed '/^$/d' | awk -F"${UNIQUE_SEPARATOR}" '{printf("| %s | %s | %s | %s |\n", $1, $2, $3, $4)}'
             } | awk -F'|' '
               {
                 key = $3;
@@ -173,8 +171,8 @@ jobs:
           {
             echo "${TABLE_TITLE}"
             echo ""
-            echo "|   | 源镜像 | pull 镜像 | docker-compose | 同步 | 更新时间 |"
-            echo "| ---- | -------- | --------- | -------------- | ---- | -------- |"
+            echo "|   | 源镜像 | pull 镜像 | 同步 | 更新时间 |"
+            echo "| ---- | -------- | --------- | ---- | -------- |"
             echo "$sorted_table_rows"
           } > new_table.tmp
 
