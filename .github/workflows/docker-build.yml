@@ -1,0 +1,173 @@
+name: 构建 Docker 镜像 → ghcr.io, DockerHub
+
+on:
+  workflow_dispatch:
+    inputs:
+      repo_url:
+        description: "要构建的 Git 仓库克隆链接 (例如: https://github.com/your-name/your-repo.git)"
+        required: true
+      repo_ref:
+        description: "要检出的分支、标签或提交SHA (例如: main)"
+        required: true
+        default: "main"
+      image_name:
+        description: "要设置的镜像名称 (例如: my-awesome-app)"
+        required: true
+        default: "my-app"
+      tags:
+        description: "要推送的标签, 逗号分隔 (例如: latest, v1.0)"
+        required: true
+        default: "latest"
+      platforms:
+        description: "要构建的平台, 逗号分隔"
+        required: true
+        default: "linux/amd64,linux/arm64,linux/arm/v7"
+
+jobs:
+  build_and_push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+
+    steps:
+      - name: 1. 检出本项目仓库
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 2. 克隆指定的代码仓库
+        run: |
+          git clone ${{ github.event.inputs.repo_url }} app
+          cd app
+          git checkout ${{ github.event.inputs.repo_ref }}
+
+      - name: 3. 设置 QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: 4. 设置 Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 5. 登录到 GitHub Container Registry (ghcr.io)
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 6. 登录到 Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      
+      - name: 7. 准备多行标签
+        id: prep_tags
+        run: |
+          TAGS_FOR_OUTPUT=""
+          IFS=',' read -r -a tag_array <<< "${{ github.event.inputs.tags }}"
+          for tag in "${tag_array[@]}"; do
+            cleaned_tag=$(echo "$tag" | xargs)
+            if [[ -n "$cleaned_tag" ]]; then
+              TAGS_FOR_OUTPUT+="${cleaned_tag}"$'\n'
+            fi
+          done
+          {
+            echo 'tags<<EOF'
+            echo -n "${TAGS_FOR_OUTPUT}"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: 8. 提取 Docker 元数据并生成标签
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ghcr.io/${{ github.repository_owner }}/${{ github.event.inputs.image_name }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.inputs.image_name }}
+          tags: ${{ steps.prep_tags.outputs.tags }}
+
+      - name: 9. 构建并推送到多个镜像仓库
+        uses: docker/build-push-action@v6
+        with:
+          context: ./app
+          platforms: ${{ github.event.inputs.platforms }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: 10. 更新或新增 README.md 中的构建记录
+        run: |
+          # 配置 Git 用户信息
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git pull --rebase
+
+          # 定义变量
+          GHCR_IMAGE_NAME="ghcr.io/${{ github.repository_owner }}/${{ github.event.inputs.image_name }}"
+          DOCKERHUB_IMAGE_NAME="${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.inputs.image_name }}"
+          SOURCE_REPO_URL="${{ github.event.inputs.repo_url }}"
+          BUILD_TIME=$(date -u '+%Y-%m-%d')
+          README_FILE="README.md"
+          TEMP_README="README.tmp"
+
+          # 检查记录是否已存在
+          if grep -qF "$GHCR_IMAGE_NAME" "$README_FILE"; then
+            echo "记录已存在，正在更新构建时间: $GHCR_IMAGE_NAME"
+            # 使用 awk 精确更新。通过设置一个标志位(in_build_table)，确保只在“已构建的 Docker 镜像”表格内进行操作。
+            awk -v image_name="$GHCR_IMAGE_NAME" -v new_date="$BUILD_TIME" '
+            BEGIN {
+                FS = "\\s*\\|\\s*";
+                in_build_table = 0;
+            }
+            # 当遇到标题时，开启标志位
+            /^### 已构建的 Docker 镜像/ { in_build_table = 1 }
+            # 当遇到下一个部分的标题时，关闭标志位
+            /^### 已同步的 Docker 镜像/ { in_build_table = 0 }
+
+            # 如果在正确的表格内，并且第四列内容匹配镜像名称
+            in_build_table && $4 ~ image_name {
+                # 使用 printf 保持格式不变，只更新日期（第五列）
+                printf "| %-3s | %s | %s | %s |", $2, $3, $4, new_date
+                print "" # printf 不会自动添加换行符
+                next
+            }
+            # 其他所有行直接打印
+            { print $0 }
+            ' "$README_FILE" > "$TEMP_README" && mv "$TEMP_README" "$README_FILE"
+          else
+            echo "记录不存在，正在添加新行到 README.md"
+            # 使用 awk 安全地计算出新行号，只统计第一个表格中的行
+            last_num=$(awk '
+              BEGIN { FS="\\s*\\|\\s*"; max=0 }
+              /^### 已构建的 Docker 镜像/ { f=1 }
+              /^### 已同步的 Docker 镜像/ { f=0 }
+              f && /^\s*\|\s*[0-9]/ { if($2 > max) max=$2 }
+              END { print max }
+            ' "$README_FILE")
+            new_num=$((last_num + 1))
+            
+            # 准备新行内容
+            COMBINED_IMAGE_NAMES="\`$GHCR_IMAGE_NAME\`<br>\`$DOCKERHUB_IMAGE_NAME\`"
+            printf -v new_row "| %-3s | %s | %s | %s |" \
+              "$new_num" \
+              "$SOURCE_REPO_URL" \
+              "$COMBINED_IMAGE_NAMES" \
+              "$BUILD_TIME"
+            
+            # 使用 sed 在“已同步的 Docker 镜像”标题前插入新行。这是最安全、最精确的插入点。
+            # 这样可以确保新行总是被添加到第一个表格的末尾。
+            sed -i.bak "/^### 已同步的 Docker 镜像/i\\$new_row" "$README_FILE"
+            rm -f "${README_FILE}.bak" # 清理 sed 创建的备份文件
+          fi
+
+          # 提交并推送变更
+          git add "$README_FILE"
+          if git diff --staged --quiet; then
+            echo "README.md 没有变化，无需提交。"
+          else
+            git commit -m "docs: 更新或新增构建镜像 ${{ github.event.inputs.image_name }} 的记录"
+            git push
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
