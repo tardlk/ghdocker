@@ -31,12 +31,10 @@ jobs:
       - name: 检出仓库
         uses: actions/checkout@v4
         with:
-          # 使用 token 以便后续可以推送更改
           token: ${{ secrets.GITHUB_TOKEN }}
       
-      - name: 设置 GHCR_USER 环境变量（移除冗余小写转换）
+      - name: 设置 GHCR_USER 环境变量
         id: set_ghcr_user
-        # github.actor 默认已为小写，无需额外转换
         run: echo "GHCR_USER=${{ github.actor }}" >> $GITHUB_ENV
       
       - name: 登录到 GitHub 容器注册表
@@ -49,14 +47,13 @@ jobs:
       - name: 设置 Docker Buildx
         uses: docker/setup-buildx-action@v3
       
-      - name: 同步镜像并更新 README（修复核心问题）
+      - name: 同步镜像并更新 README（最终修复版）
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git pull --rebase
 
-          # --- 1. 初始化基础文件（修复 example.yaml 缺失问题）---
-          # 确保 docker-compose 目录和 example.yaml 模板存在
+          # --- 1. 初始化基础模板（确保 example.yaml 存在）---
           mkdir -p docker-compose
           if [ ! -f "docker-compose/example.yaml" ]; then
             echo "⚠️ 未找到 docker-compose/example.yaml，自动生成基础模板"
@@ -64,20 +61,22 @@ jobs:
           version: '3.8'
           services:
             app:
-              image: ghcr.io/USER/IMAGE:TAG  # 替换为实际镜像地址
+              image: ghcr.io/USER/IMAGE:TAG
               container_name: app-container
               restart: unless-stopped
-              # 可根据需求添加 volumes、ports 等配置
+              # 可按需添加以下配置
               # volumes:
               #   - ./data:/app/data
               # ports:
               #   - "8080:8080"
+              # environment:
+              #   - TZ=Asia/Shanghai
           EOF
-            # 将模板中的 USER 替换为当前 GHCR 用户，提升实用性
+            # 替换模板中的 USER 为当前 GHCR 用户
             sed -i "s/ghcr.io\/USER/ghcr.io\/${{ env.GHCR_USER }}/g" docker-compose/example.yaml
           fi
 
-          # --- 2. 镜像同步与信息收集（优化 skopeo 容错性）---
+          # --- 2. 镜像同步核心逻辑（支持嵌套目录+重试机制）---
           NEW_ROWS_DATA=""
           UNIQUE_SEPARATOR="%%%"
           TABLE_TITLE="### 已同步的 Docker 镜像"
@@ -93,7 +92,7 @@ jobs:
             }
           ' README.md | sed -e 's/|//g' -e 's/^[ \t]*//;s/[ \t]*$//')
 
-          # 解析输入的镜像列表和 GHCR 名称列表
+          # 解析输入参数为数组
           IFS=',' read -r -a image_array <<< "${{ inputs.images }}"
           IFS=',' read -r -a ghcr_name_array <<< "${{ inputs.ghcr_names }}"
 
@@ -101,7 +100,7 @@ jobs:
             full_image=$(echo "${image_array[$i]}" | xargs)
             if [ -z "$full_image" ]; then continue; fi
 
-            # 跳过已存在于 README 的镜像
+            # 跳过已存在的镜像
             if echo "$existing_source_images" | grep -qFx "$full_image"; then
               echo "ℹ️ 镜像 $full_image 已存在于 README.md，跳过。"
               continue
@@ -109,23 +108,23 @@ jobs:
             
             echo "--------------------------------------------------"
             echo "===== 开始处理 $full_image ====="
-            # 拆分镜像名称和标签（默认标签为 latest）
+            # 拆分镜像名和标签（默认标签为 latest）
             current_image=$(echo "$full_image" | cut -d':' -f1)
             current_tag=$(echo "$full_image" | cut -s -d':' -f2); [ -z "$current_tag" ] && current_tag="latest"
-            # 确定目标标签（alpine 标签特殊保留，其他按配置改为 latest）
+            # 确定目标标签（alpine 标签特殊保留）
             target_tag="$current_tag"
             if [[ "$current_tag" =~ "alpine" ]]; then
               target_tag="alpine"
             elif [ "${{ inputs.change_tag_to_latest }}" == "是" ]; then
               target_tag="latest"
             fi
-            # 标记同步状态（latest/alpine 标签默认标记为成功）
+            # 标记同步状态
             sync_status="✔️"
             if [ "$current_tag" != "latest" ] && [ "$target_tag" != "alpine" ]; then
               sync_status="❌"
             fi
 
-            # 确定目标 GHCR 镜像名称（未指定则自动提取源镜像basename）
+            # 确定目标 GHCR 镜像名（未指定则自动提取）
             current_ghcr_name="${ghcr_name_array[$i]}"
             if [ -z "$current_ghcr_name" ]; then 
               IMAGE_NAME=$(basename "$current_image")
@@ -135,10 +134,10 @@ jobs:
             SOURCE_IMAGE_URI="docker://$current_image:$current_tag"
             TARGET_IMAGE_URI="docker://ghcr.io/${{ env.GHCR_USER }}/$IMAGE_NAME:$target_tag"
 
-            # --- 核心：带重试的 skopeo 同步（修复网络波动问题）---
+            # --- 带重试的 skopeo 同步 ---
             echo "源镜像: $SOURCE_IMAGE_URI"
             echo "目标镜像: $TARGET_IMAGE_URI"
-            retry_count=2  # 最多重试 2 次
+            retry_count=2
             sync_success=false
             for ((attempt=1; attempt<=retry_count; attempt++)); do
               if skopeo copy --all "$SOURCE_IMAGE_URI" "$TARGET_IMAGE_URI"; then
@@ -150,52 +149,51 @@ jobs:
                   echo "⚠️ 第 $attempt 次同步失败，5 秒后重试..."
                   sleep 5
                 else
-                  echo "❌ 镜像同步失败（已重试 $retry_count 次），请检查："
-                  echo "  1. 源镜像 $full_image 是否存在且可公开访问"
-                  echo "  2. 网络连接是否稳定"
-                  echo "  3. 若源镜像是私有镜像，需补充源镜像登录逻辑"
+                  echo "❌ 镜像同步失败（已重试 $retry_count 次）"
+                  echo "   排查方向：1. 源镜像是否存在 2. 网络是否稳定 3. 源镜像是否需要认证"
                 fi
               fi
             done
-            # 同步失败则跳过后续处理（不生成 compose 文件和 README 记录）
             if [ "$sync_success" != true ]; then
               continue
             fi
 
-            # --- 生成 docker-compose 文件（基于模板复制，确保源文件存在）---
+            # --- 生成 compose 文件（关键修复：支持嵌套目录）---
             compose_file_path="docker-compose/$IMAGE_NAME.yaml"
+            # 提取父目录并创建（如 docker-compose/louislam）
+            compose_dir=$(dirname "$compose_file_path")
+            mkdir -p "$compose_dir"  # 自动创建多级目录，避免路径不存在错误
+            # 复制模板并替换镜像地址（用 | 分隔符避免 / 冲突）
             cp docker-compose/example.yaml "$compose_file_path"
-            # 替换 compose 文件中的默认镜像地址为当前同步的目标镜像
-            sed -i "s/ghcr.io\/${{ env.GHCR_USER }}\/IMAGE:TAG/$TARGET_IMAGE_URI/g" "$compose_file_path"
+            sed -i "s|ghcr.io\/${{ env.GHCR_USER }}\/IMAGE:TAG|$TARGET_IMAGE_URI|g" "$compose_file_path"
             echo "✅ 已生成 compose 文件：$compose_file_path"
 
-            # --- 准备 README 表格新行数据（修复列对齐问题）---
-            # 构建 pull 命令（latest 标签省略不显示）
+            # --- 准备 README 表格数据 ---
             pull_cmd="ghcr.io/${{ env.GHCR_USER }}/$IMAGE_NAME"
             if [ "$target_tag" != "latest" ]; then
               pull_cmd="$pull_cmd:$target_tag"
             fi
             pull_cmd="\`$pull_cmd\`"
-            # 构建 compose 文件链接（基于仓库地址生成）
+            # 生成 compose 文件的 GitHub 链接
             compose_file="[yaml](https://github.com/${{ github.repository }}/blob/main/$compose_file_path)"
-            # 填充更新时间（UTC 时间，避免时区混乱）
+            # 记录 UTC 更新时间
             update_time=$(date -u "+%Y-%m-%d %H:%M:%S")
-            # 确保 5 列数据完整（源镜像、pull 命令、compose 链接、同步状态、更新时间）
+            # 拼接表格行数据（确保 5 列完整）
             new_line_data="${full_image}${UNIQUE_SEPARATOR}${pull_cmd}${UNIQUE_SEPARATOR}${compose_file}${UNIQUE_SEPARATOR}${sync_status}${UNIQUE_SEPARATOR}${update_time}"
             NEW_ROWS_DATA+="${new_line_data}\n"
           done
 
-          # 无新镜像时直接退出，避免无效操作
+          # 无新镜像时退出
           if [ -z "$NEW_ROWS_DATA" ]; then
             echo "--------------------------------------------------"
             echo "ℹ️ 没有新的镜像被添加，无需更新 README.md。"
             exit 0
           fi
 
-          # --- 3. README 更新、排序与重写（确保表格格式正确）---
+          # --- 3. 更新 README 表格（确保格式正确）---
           echo "--------------------------------------------------"
           echo "开始更新 README.md..."
-          # 提取已有的表格行（排除标题和表头）
+          # 提取已有表格行
           existing_rows=$(awk '
             $0 == "'"${TABLE_TITLE}"'" { in_table=1; next }
             in_table {
@@ -203,31 +201,29 @@ jobs:
               if (!/^\|/ && !/^$/) { in_table=0 }
             }
           ' README.md)
-          # 合并新旧行并按镜像名称排序（不区分大小写）
+          # 合并新旧行并按镜像名排序（不区分大小写）
           sorted_table_rows=$(
             {
-              # 清理已有行的序号，便于重新排序
+              # 清理已有行的序号
               echo "$existing_rows" | sed 's/^| [0-9]\{1,\} *|/|/'
-              # 解析新行数据并生成表格格式
+              # 解析新行数据
               echo -e "$NEW_ROWS_DATA" | sed '/^$/d' | awk -F"${UNIQUE_SEPARATOR}" '{
                 printf("| %s | %s | %s | %s | %s |\n", $1, $2, $3, $4, $5)
               }'
             } | awk -F'|' '
-              # 提取镜像名称作为排序键（去除格式符和冗余字符）
               {
                 key = $3;
-                gsub(/`/, "", key);          # 移除反引号
-                gsub(/^[[:space:]]+|[[:space:]]+$/, "", key);  # 去除空格
-                sub(/.*\/|:[^:]*$/, "", key); # 提取镜像名（如从 ghcr.io/u/img:t 中提取 img）
-                print key "@@@" $0;          # 拼接排序键和原始行
+                gsub(/`/, "", key);
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", key);
+                sub(/.*\/|:[^:]*$/, "", key);  # 提取镜像名作为排序键
+                print key "@@@" $0;
               }
             ' | sort -f | sed 's/^.*@@@//' | awk '
-              # 重新添加有序序号（确保表格美观）
-              BEGIN{count=1} {printf("| %-3d %s\n", count++, $0)}
+              BEGIN{count=1} {printf("| %-3d %s\n", count++, $0)}  # 重新添加序号
             '
           )
 
-          # 生成新的表格内容（包含标题和表头）
+          # 生成新表格
           {
             echo "${TABLE_TITLE}"
             echo ""
@@ -236,24 +232,22 @@ jobs:
             echo "$sorted_table_rows"
           } > new_table.tmp
 
-          # 替换 README 中的旧表格为新表格
+          # 替换 README 中的旧表格
           awk '
             BEGIN { replaced=0 }
             $0 == "'"${TABLE_TITLE}"'" && !replaced {
-              # 插入新表格内容
               while ((getline line < "new_table.tmp") > 0) { print line }
               close("new_table.tmp");
               replaced=1;
-              skipping=1;  # 跳过旧表格的内容
+              skipping=1;
               next;
             }
             skipping {
-              # 直到遇到非表格行（非 | 开头且非空行），停止跳过
               if (!/^\|/ && !/^$/) { skipping=0 } else { next }
             }
-            { print }  # 打印非表格内容
+            { print }
           ' README.md > README.tmp && mv README.tmp README.md
-          rm new_table.tmp  # 清理临时文件
+          rm new_table.tmp
 
           # --- 4. 提交更改到仓库 ---
           git add README.md docker-compose/
