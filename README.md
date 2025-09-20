@@ -25,13 +25,20 @@
   4. 更新 README 中的同步状态表
 <!--SYNC-TABLE-START-->
 ## 📦 镜像同步状态
-最后更新时间（北京时间）：2025-09-20 13:03:44
+最后更新时间（北京时间）：2025-09-20 13:51:45
 
 | 源镜像 | 同步后镜像（可复制） | 更新时间（北京时间） | 备注 |
 | ------ | ------------------- | -------------------- | ---- |
- `louislam/dockge:1` | `docker pull ghcr.io/tardlk/redis:latest` | 2025-09-20 13:03:53 | - |
- `openlistteam/openlist:latest` | `docker pull ghcr.io/tardlk/python:3.11` | 2025-09-20 13:06:09 | - |
- `nyanmisaka/jellyfin:latest` | `docker pull ghcr.io/tardlk/postgres:15` | 2025-09-20 13:04:52 | - |
- `mzz2017/v2raya:latest` | `docker pull ghcr.io/tardlk/node:20` | 2025-09-20 13:06:49 | - |
- `jxxghp/moviepilot-v2:latest` | `docker pull ghcr.io/tardlk/mysql:8.0` | 2025-09-20 13:04:30 | - |
+ `pull` | ❌ 拉取失败 | 2025-09-20 13:52:01 |  |
+ `pull` | ❌ 拉取失败 | 2025-09-20 13:52:00 |  |
+ `pull` | ❌ 拉取失败 | 2025-09-20 13:52:00 |  |
+ `pull` | ❌ 拉取失败 | 2025-09-20 13:51:59 |  |
+ `ghcr.io/tardlk/python:3.11` | ❌ 拉取失败 | 2025-09-20 13:51:59 |  |
+ `ghcr.io/tardlk/postgres:15` | ❌ 拉取失败 | 2025-09-20 13:52:00 |  |
+ `ghcr.io/tardlk/node:20` | ❌ 拉取失败 | 2025-09-20 13:52:01 |  |
+ `ghcr.io/tardlk/mysql:8.0` | ❌ 拉取失败 | 2025-09-20 13:52:01 |  |
+ `docker` | `docker pull ghcr.io/tardlk/docker` | 2025-09-20 13:52:01 |  |
+ `docker` | `docker pull ghcr.io/tardlk/docker` | 2025-09-20 13:52:00 |  |
+ `docker` | `docker pull ghcr.io/tardlk/docker` | 2025-09-20 13:52:00 |  |
+ `docker` | `docker pull ghcr.io/tardlk/docker` | 2025-09-20 13:51:59 |  |
 <!--SYNC-TABLE-END-->
