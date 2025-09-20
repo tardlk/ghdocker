@@ -14,13 +14,20 @@ jobs:
 
           echo "Fetching all container packages for $OWNER/$REPO ..."
 
-          # 获取当前仓库的所有容器包
-          PACKAGE_NAMES=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/$OWNER/$REPO/packages?package_type=container&per_page=100" \
-            | jq -r '.[].name')
+          RESPONSE=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/$OWNER/$REPO/packages?package_type=container&per_page=100")
+
+          # 检查是否是数组
+          if ! echo "$RESPONSE" | jq -e 'type=="array"' >/dev/null; then
+            echo "❌ API 返回的不是数组，可能是没有权限或没有任何包"
+            echo "$RESPONSE"
+            exit 0
+          fi
+
+          PACKAGE_NAMES=$(echo "$RESPONSE" | jq -r '.[].name')
 
           if [ -z "$PACKAGE_NAMES" ]; then
-            echo "❌ 没有找到任何容器包"
+            echo "ℹ 没有找到任何容器包"
             exit 0
           fi
 
