@@ -11,20 +11,6 @@
 
 ## 📋 镜像同步状态
 
-<!--SYNC-TABLE-START-->
-| 源镜像 | 同步后镜像 | 更新时间 | 备注 |
-| ------ | ---------- | -------- | ---- |
-| nginx:latest | ghcr.io/USERNAME/nginx:latest | - | - |
-| redis:latest | ghcr.io/USERNAME/redis:latest | - | - |
-| alpine:latest | ghcr.io/USERNAME/alpine:latest | - | - |
-| busybox:latest | ghcr.io/USERNAME/busybox:latest | - | - |
-| mysql:8.0 | ghcr.io/USERNAME/mysql:8.0 | - | - |
-| postgres:15 | ghcr.io/USERNAME/postgres:15 | - | - |
-| mongo:6.0 | ghcr.io/USERNAME/mongo:6.0 | - | - |
-| python:3.11 | ghcr.io/USERNAME/python:3.11 | - | - |
-| node:20 | ghcr.io/USERNAME/node:20 | - | - |
-| golang:1.21 | ghcr.io/USERNAME/golang:1.21 | - | - |
-<!--SYNC-TABLE-END-->
 ---
 
 ## ⚙️ 工作流说明
@@ -37,3 +23,19 @@
   2. 拉取源镜像并比对 digest
   3. 如果有更新则推送到 GHCR
   4. 更新 README 中的同步状态表
+<!--SYNC-TABLE-START-->
+## 📦 镜像同步状态
+最后更新时间（北京时间）：2025-09-20 13:03:44
+
+| 源镜像 | 同步后镜像（可复制） | 更新时间（北京时间） | 备注 |
+| ------ | ------------------- | -------------------- | ---- |
+ `redis:latest` | `docker pull ghcr.io/tardlk/redis:latest` | 2025-09-20 13:03:53 | - |
+ `python:3.11` | `docker pull ghcr.io/tardlk/python:3.11` | 2025-09-20 13:06:09 | - |
+ `postgres:15` | `docker pull ghcr.io/tardlk/postgres:15` | 2025-09-20 13:04:52 | - |
+ `node:20` | `docker pull ghcr.io/tardlk/node:20` | 2025-09-20 13:06:49 | - |
+ `mysql:8.0` | `docker pull ghcr.io/tardlk/mysql:8.0` | 2025-09-20 13:04:30 | - |
+ `mongo:6.0` | `docker pull ghcr.io/tardlk/mongo:6.0` | 2025-09-20 13:05:26 | - |
+ `golang:1.21` | `docker pull ghcr.io/tardlk/golang:1.21` | 2025-09-20 13:07:19 | - |
+ `busybox:latest` | `docker pull ghcr.io/tardlk/busybox:latest` | 2025-09-20 13:03:58 | - |
+ `alpine:latest` | `docker pull ghcr.io/tardlk/alpine:latest` | 2025-09-20 13:03:56 | - |
+<!--SYNC-TABLE-END-->
