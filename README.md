@@ -13,15 +13,6 @@
 ## 📋 镜像同步状态
 > **最后更新时间（北京时间）：** 2025-09-20 14:15:00
 
-<!--SYNC-TABLE-START-->
-| 源镜像 | 同步后镜像（可复制） | 更新时间（北京时间） | 备注 |
-| ------ | ------------------- | -------------------- | ---- |
-| louislam/dockge:1 |  |  |  |
-| openlistteam/openlist:latest |  |  |  |
-| nyanmisaka/jellyfin:latest |  |  |  |
-| mzz2017/v2raya:latest |  |  |  |
-| jxxghp/moviepilot-v2:latest |  |  |  |
-<!--SYNC-TABLE-END-->
 
 ---
 
@@ -35,3 +26,14 @@
   2. 拉取源镜像并比对 digest
   3. 如果有更新则推送到 GHCR
   4. 更新 README 中的同步状态表
+<!--SYNC-TABLE-START-->
+## 📦 镜像同步状态
+最后更新时间（北京时间）：2025-09-20 14:16:06
+
+| 源镜像 | 同步后镜像（可复制） | 更新时间（北京时间） | 备注 |
+| ------ | ------------------- | -------------------- | ---- |
+ `openlistteam/openlist:latest` | `docker pull ghcr.io/tardlk/openlistteam/openlist:latest` | 2025-09-20 14:16:17 |  |
+ `nyanmisaka/jellyfin:latest` | `docker pull ghcr.io/tardlk/nyanmisaka/jellyfin:latest` | 2025-09-20 14:17:26 |  |
+ `mzz2017/v2raya:latest` | `docker pull ghcr.io/tardlk/mzz2017/v2raya:latest` | 2025-09-20 14:17:37 |  |
+ `jxxghp/moviepilot-v2:latest` | `docker pull ghcr.io/tardlk/jxxghp/moviepilot-v2:latest` | 2025-09-20 14:17:57 |  |
+<!--SYNC-TABLE-END-->
