@@ -1,4 +1,4 @@
-name: Delete All GHCR Images for This Repo
+name: Delete GHCR Images Listed in README
 
 on:
   workflow_dispatch:
@@ -7,42 +7,45 @@ jobs:
   delete-images:
     runs-on: ubuntu-latest
     steps:
-      - name: 列出并删除所有镜像
+      - name: 检出仓库
+        uses: actions/checkout@v4
+
+      - name: 从 README 提取镜像列表
+        id: extract
         run: |
-          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          REPO=$(echo "${{ github.event.repository.name }}" | tr '[:upper:]' '[:lower:]')
+          # 提取 <!--SYNC-TABLE-START--> 和 <!--SYNC-TABLE-END--> 之间的内容
+          awk '/<!--SYNC-TABLE-START-->/ {flag=1; next} /<!--SYNC-TABLE-END-->/ {flag=0} flag' README.md \
+            | tail -n +3 | awk -F '|' '{print $3}' > /tmp/mirrors.txt
 
-          echo "Fetching all container packages for $OWNER/$REPO ..."
+          # 这里取的是“同步后镜像”列（第3列），去掉空行和空格
+          sed -i 's/ //g' /tmp/mirrors.txt
+          grep -v '^$' /tmp/mirrors.txt > mirrors.txt
 
-          RESPONSE=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/$OWNER/$REPO/packages?package_type=container&per_page=100")
+          echo "镜像列表："
+          cat mirrors.txt
 
-          # 检查是否是数组
-          if ! echo "$RESPONSE" | jq -e 'type=="array"' >/dev/null; then
-            echo "❌ API 返回的不是数组，可能是没有权限或没有任何包"
-            echo "$RESPONSE"
-            exit 0
-          fi
-
-          PACKAGE_NAMES=$(echo "$RESPONSE" | jq -r '.[].name')
-
-          if [ -z "$PACKAGE_NAMES" ]; then
-            echo "ℹ 没有找到任何容器包"
-            exit 0
-          fi
-
-          for pkg in $PACKAGE_NAMES; do
+      - name: 删除镜像
+        run: |
+          while read image; do
+            # 从 ghcr.io/username/name:tag 提取包名（去掉 ghcr.io/username/ 前缀和 tag）
+            pkg=$(echo "$image" | sed -E 's#ghcr.io/[^/]+/([^:]+):.*#\1#')
             echo "Processing package: $pkg"
+
             VERSION_IDS=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-              "https://api.github.com/repos/$OWNER/$REPO/packages/container/$pkg/versions?per_page=100" \
+              "https://api.github.com/users/${{ github.repository_owner }}/packages/container/$pkg/versions?per_page=100" \
               | jq -r '.[].id')
+
+            if [ -z "$VERSION_IDS" ] || [ "$VERSION_IDS" = "null" ]; then
+              echo "  ⚠ 找不到版本，可能已经删除或无权限"
+              continue
+            fi
 
             for vid in $VERSION_IDS; do
               echo "  Deleting version ID: $vid"
               curl -s -X DELETE \
                 -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-                "https://api.github.com/repos/$OWNER/$REPO/packages/container/$pkg/versions/$vid"
+                "https://api.github.com/users/${{ github.repository_owner }}/packages/container/$pkg/versions/$vid"
             done
-          done
+          done < mirrors.txt
 
           echo "✅ 删除完成"
