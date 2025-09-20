@@ -23,7 +23,9 @@
 
 | 源镜像 | 同步后镜像（可复制） | 更新时间（北京时间） | 备注 |
 | ------ | ------------------- | -------------------- | ---- |
+| `nginx:latest` | `docker pull ghcr.io/YOUR_USERNAME/nginx:latest` | 尚未同步 | 推荐使用加速源：ghcr.nju.edu.cn |
 | `louislam/dockge:1` | `docker pull ghcr.io/YOUR_USERNAME/louislam/dockge:1` | 尚未同步 | Dockge 面板 |
+| `redis:7` | `docker pull ghcr.io/YOUR_USERNAME/redis:7` | 尚未同步 | Redis 7 稳定版 |
 <!--SYNC-TABLE-END-->
 
 > 请将 `YOUR_USERNAME` 替换为你的 GitHub 用户名。工作流运行后会自动更新同步后镜像和时间。
