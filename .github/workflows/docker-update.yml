@@ -22,38 +22,46 @@ jobs:
       - name: 2. 安装依赖
         run: sudo apt-get update && sudo apt-get install -y jq skopeo
 
-      - name: 3. 提取目标镜像名称（自动宽容表格空格格式）
+      - name: 3. 提取目标镜像名称（宽容表格格式和空格）
         id: extract-target-images
         run: |
           owner_lowercase=$(echo "${{ github.repository_owner }}" | tr 'A-Z' 'a-z')
           awk -F '|' '
-          /^### 已同步的 Docker 镜像/ {capture=1; next}
-          capture && /^\| *[0-9]+/ {
-              sync_col=$4; gsub(/^[ \t]+|[ \t]+$/, "", sync_col);
-              if (sync_col != "✔️") next;
-              gsub(/^[ \t]+|[ \t]+$/, "", $3); gsub(/`/, "", $3);
-              print $3
+          BEGIN{table=0}
+          /^### 已同步的 Docker 镜像/ {table=1; next}
+          table && /^\|/ {
+              # 跳过表头和分隔线
+              if ($2 ~ /源镜像/ || $0 ~ /----/) next
+              # 字段数检查
+              if (NF < 6) next
+              # 去除字段空格
+              for(i=1;i<=NF;i++) gsub(/^[ \t]+|[ \t]+$/, "", $i)
+              if ($5 != "✔️") next
+              pull_img=$4; gsub(/`/, "", pull_img)
+              print pull_img
           }
-          /^### / && capture && !/已同步/ {capture=0}
-          ' README.md | grep -vE '^源镜像$|^-+$' | sed '/^$/d' | \
+          /^### / && table && !/已同步/ {table=0}
+          ' README.md | sed '/^$/d' | \
           sed "s|^ghcr.io/$owner_lowercase/||" | \
           sed 's/:[^:]*$//' > target-image-list.txt
           echo "===== 将要检查的目标镜像列表 ====="
           cat target-image-list.txt
 
-      - name: 4. 提取源镜像名称（自动宽容表格空格格式）
+      - name: 4. 提取源镜像名称（宽容表格格式和空格）
         id: extract-source-images
         run: |
           awk -F '|' '
-          /^### 已同步的 Docker 镜像/ {capture=1; next}
-          capture && /^\| *[0-9]+/ {
-              sync_col=$4; gsub(/^[ \t]+|[ \t]+$/, "", sync_col);
-              if (sync_col != "✔️") next;
-              gsub(/^[ \t]+|[ \t]+$/, "", $2);
-              print $2
+          BEGIN{table=0}
+          /^### 已同步的 Docker 镜像/ {table=1; next}
+          table && /^\|/ {
+              if ($2 ~ /源镜像/ || $0 ~ /----/) next
+              if (NF < 6) next
+              for(i=1;i<=NF;i++) gsub(/^[ \t]+|[ \t]+$/, "", $i)
+              if ($5 != "✔️") next
+              print $3
           }
-          /^### / && capture && !/已同步/ {capture=0}
-          ' README.md | grep -vE '^源镜像$|^-+$' | sed '/^$/d' > source-image-list.txt
+          /^### / && table && !/已同步/ {table=0}
+          ' README.md | sed '/^$/d' > source-image-list.txt
           echo "===== 对应的源镜像列表 ====="
           cat source-image-list.txt
 
@@ -184,12 +192,22 @@ jobs:
               continue
             fi
 
-            # 更新 README.md 更新时间
+            # 更新 README.md 更新时间（字段去空格，兼容无空格/多空格）
             today=$(date +'%Y-%m-%d')
             awk -F'|' -v img_name="$target_image" -v date="$today" '
               BEGIN{OFS=FS}
-              $3 ~ "`ghcr.io/.*/" img_name "(:[^`]+)?`" && $4 ~ /✔️/ { $5 = " " date " "; print; next }
-              {print}
+              /^\|/ {
+                for (i=1;i<=NF;i++) gsub(/^[ \t]+|[ \t]+$/, "", $i)
+                # pull 镜像字段去反引号
+                pull_img=$4; gsub(/`/, "", pull_img)
+                if (pull_img ~ "ghcr.io/.*/" img_name "(:[^`]+)?") && $5 == "✔️" {
+                  $6 = date
+                  print
+                  next
+                }
+                print
+              }
+              !/^\|/ { print }
             ' README.md > README.tmp && mv README.tmp README.md
             
             git config --global user.name "github-actions[bot]"
