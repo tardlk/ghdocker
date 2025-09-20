@@ -1,204 +1,114 @@
-name: 同步 Docker 镜像 → ghcr.io
-
-permissions:
-  packages: write
-  contents: write
+name: Docker Image Sync
 
 on:
+  schedule:
+    - cron: '0 2 * * *' # 每天北京时间 10 点执行（UTC 2 点）
   workflow_dispatch:
-    inputs:
-      images:
-        description: "要同步的 Docker 镜像列表，格式为 '镜像1:标签1,镜像2:标签2,镜像3:标签3'"
-        required: true
-        default: ""
-      ghcr_names:
-        description: "对应的同步后的镜像名称列表，格式为 '名称1,名称2,名称3'，如果某个镜像不需要指定名称，则用逗号填充，例如 ',,my-image' 表示第三个镜像同步后名称为 my-image，前两个自动提取"
-        required: false
-        default: ""
-      change_tag_to_latest:
-        description: "同步后是否将镜像标签改为 latest (是/否)"
-        required: true
-        type: choice
-        options:
-          - "是"
-          - "否"
-        default: "是"
 
 jobs:
-  docker-image-sync:
+  sync:
     runs-on: ubuntu-latest
     steps:
-      - name: 安装依赖工具
-        run: sudo apt-get update && sudo apt-get install -y jq skopeo
-
-      - name: 检出仓库
+      - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 设置 GHCR_USER 环境变量
-        id: set_ghcr_user
-        run: echo "GHCR_USER=$(echo '${{ github.actor }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
-
-      - name: 登录到 GitHub 容器注册表
+      - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ env.GHCR_USER }}
+          username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 设置 Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: 同步镜像并更新 README
+      - name: Extract mirrors from README
         run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git pull --rebase
+          # 提取 README 中表格的行（去掉表头和空行）
+          sed -n '/<!--SYNC-TABLE-START-->/,/<!--SYNC-TABLE-END-->/p' README.md \
+            | grep '|' \
+            | tail -n +4 \
+            > old_table.txt
 
-          # --- 1. 镜像同步与信息收集 ---
-          NEW_ROWS_DATA=""
-          UNIQUE_SEPARATOR="%%%"
-          TABLE_TITLE="### 已同步的 Docker 镜像"
+          # 提取源镜像列表
+          MIRRORS=($(awk -F'|' '{gsub(/`/, "", $2); gsub(/^[ \t]+|[ \t]+$/, "", $2); if($2!="无更新" && $2!="") print $2}' old_table.txt))
 
-          existing_source_images=$(awk '
-            $0 == "'"${TABLE_TITLE}"'" { in_table=1; next }
-            in_table {
-              if (/^\| [0-9]/) { 
-                match($0, /\| *[^|]+ *\| *([^|]+) *\|/);
-                if (RSTART) { print substr($0, RSTART, RLENGTH) }
-              }
-              if (!/^\|/ && !/^$/) { in_table=0 }
-            }
-          ' README.md | sed -e 's/|//g' -e 's/^[ \t]*//;s/[ \t]*$//')
+          if [ ${#MIRRORS[@]} -eq 0 ]; then
+            echo "❌ 没有在 README 表格中找到源镜像，请先在表格中添加。"
+            exit 1
+          fi
 
-          IFS=',' read -r -a image_array <<< "${{ inputs.images }}"
-          IFS=',' read -r -a ghcr_name_array <<< "${{ inputs.ghcr_names }}"
+          echo "MIRRORS_LIST=${MIRRORS[*]}" >> $GITHUB_ENV
 
-          for i in "${!image_array[@]}"; do
-            full_image=$(echo "${image_array[$i]}" | xargs)
-            if [ -z "$full_image" ]; then continue; fi
+      - name: Sync Docker images (preserve old content + remarks)
+        run: |
+          set -e
+          LAST_UPDATE=$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')
 
-            if echo "$existing_source_images" | grep -qFx "$full_image"; then
-              echo "镜像 $full_image 已存在于 README.md，跳过。"
+          echo "最后更新时间（北京时间）：$LAST_UPDATE" > sync_table.md
+          echo "" >> sync_table.md
+          echo "| 源镜像 | 同步后镜像（可复制） | 更新时间（北京时间） | 备注 |" >> sync_table.md
+          echo "| ------ | ------------------- | -------------------- | ---- |" >> sync_table.md
+
+          TMP_FILE=$(mktemp)
+
+          # 读取旧表格到关联数组
+          declare -A OLD_MIRROR OLD_REMARK
+          while IFS='|' read -r _ src mirror time remark _; do
+            src_clean=$(echo "$src" | tr -d '`' | xargs)
+            mirror_clean=$(echo "$mirror" | xargs)
+            remark_clean=$(echo "$remark" | xargs)
+            OLD_MIRROR["$src_clean"]="$mirror_clean"
+            OLD_REMARK["$src_clean"]="$remark_clean"
+          done < old_table.txt
+
+          for IMAGE in ${MIRRORS_LIST}; do
+            TARGET="ghcr.io/${{ github.repository_owner }}/$IMAGE"
+            REMARK="${OLD_REMARK[$IMAGE]}"
+
+            echo "检查 $IMAGE 是否有更新..."
+            if ! docker pull --quiet $IMAGE; then
+              echo "❌ $IMAGE 拉取失败"
+              NOW=$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')
+              echo "$NOW| \`$IMAGE\` | ❌ 拉取失败 | $NOW | $REMARK |" >> "$TMP_FILE"
               continue
             fi
 
-            echo "--------------------------------------------------"
-            echo "===== 开始处理 $full_image ====="
-            current_image=$(echo "$full_image" | cut -d':' -f1)
-            current_tag=$(echo "$full_image" | cut -s -d':' -f2); [ -z "$current_tag" ] && current_tag="latest"
+            SRC_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' $IMAGE | cut -d'@' -f2)
 
-            # 标签判断逻辑更安全
-            target_tag="$current_tag"
-            if [[ "$current_tag" =~ "alpine" ]]; then
-              target_tag="alpine"
-            elif [ "${{ inputs.change_tag_to_latest }}" == "是" ]; then
-              target_tag="latest"
-            fi
+            docker pull --quiet $TARGET || true
+            DEST_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' $TARGET 2>/dev/null | cut -d'@' -f2 || true)
 
-            # 同步状态，建议用 skopeo 成功/失败结果决定
-            sync_status=""
-            current_ghcr_name="${ghcr_name_array[$i]}"
-            if [ -z "$current_ghcr_name" ]; then 
-              IMAGE_NAME=$(basename "$current_image")
-            else 
-              IMAGE_NAME="$current_ghcr_name"
-            fi
-
-            SOURCE_IMAGE_URI="docker://$current_image:$current_tag"
-            TARGET_IMAGE_URI="docker://ghcr.io/${{ env.GHCR_USER }}/$IMAGE_NAME:$target_tag"
-
-            echo "源镜像: $SOURCE_IMAGE_URI"
-            echo "目标镜像: $TARGET_IMAGE_URI"
-
-            if skopeo copy --all "$SOURCE_IMAGE_URI" "$TARGET_IMAGE_URI"; then
-              echo "✅ 镜像同步成功"
-              sync_status="✔️"
+            if [ "$SRC_DIGEST" != "$DEST_DIGEST" ]; then
+              echo "发现更新，开始同步 $IMAGE..."
+              docker tag $IMAGE $TARGET
+              docker push $TARGET
+              NOW=$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')
+              echo "$NOW| \`$IMAGE\` | \`docker pull $TARGET\` | $NOW | $REMARK |" >> "$TMP_FILE"
             else
-              echo "❌ 镜像同步失败，请检查源镜像是否存在或网络连接。"
-              sync_status="❌"
-              continue
-            fi
-
-            # pull 命令字符串
-            pull_cmd="ghcr.io/${{ env.GHCR_USER }}/$IMAGE_NAME"
-            if [ "$target_tag" != "latest" ]; then
-              pull_cmd="$pull_cmd:$target_tag"
-            fi
-            pull_cmd="\`$pull_cmd\`"
-
-            # 生成新行数据（无首行空白）
-            new_line_data="${full_image}${UNIQUE_SEPARATOR}${pull_cmd}${UNIQUE_SEPARATOR}${sync_status}${UNIQUE_SEPARATOR}"
-            if [ -z "$NEW_ROWS_DATA" ]; then
-              NEW_ROWS_DATA="${new_line_data}"
-            else
-              NEW_ROWS_DATA="${NEW_ROWS_DATA}\n${new_line_data}"
+              echo "$IMAGE 无更新，保留原同步后镜像列内容"
+              NOW=$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')
+              old_val="${OLD_MIRROR[$IMAGE]}"
+              if [ -z "$old_val" ] || [ "$old_val" = "❌ 拉取失败" ]; then
+                old_val="\`docker pull $TARGET\`"
+              fi
+              echo "$NOW| \`$IMAGE\` | $old_val | $NOW | $REMARK |" >> "$TMP_FILE"
             fi
           done
 
-          if [ -z "$NEW_ROWS_DATA" ]; then
-            echo "--------------------------------------------------"
-            echo "没有新的镜像被添加，无需更新 README.md。"
-            exit 0
-          fi
+          sort -r "$TMP_FILE" | cut -d'|' -f2- >> sync_table.md
 
-          # --- 2. README 更新、排序与重写 ---
-          echo "--------------------------------------------------"
-          echo "开始更新 README.md..."
-
-          existing_rows=$(awk '
-            $0 == "'"${TABLE_TITLE}"'" { in_table=1; next }
-            in_table {
-              if (/^\| [0-9]/) { print }
-              if (!/^\|/ && !/^$/) { in_table=0 }
-            }
-          ' README.md)
-
-          sorted_table_rows=$(
-            {
-              echo "$existing_rows" | sed 's/^| [0-9]\{1,\} *|/|/'
-              echo -e "$NEW_ROWS_DATA" | sed '/^$/d' | awk -F"${UNIQUE_SEPARATOR}" '{printf("| %s | %s | %s | %s |\n", $1, $2, $3, $4)}'
-            } | awk -F'|' '
-              {
-                key = $3;
-                gsub(/`/, "", key);
-                gsub(/^[[:space:]]+|[[:space:]]+$/, "", key);
-                sub(/.*\/|:[^:]*$/, "", key);
-                print key "@@@" $0;
-              }
-            ' | sort -f | sed 's/^.*@@@//' | awk 'BEGIN{count=1} {printf("| %-3s %s\n", count++, $0)}'
-          )
-
+      - name: Update README.md
+        run: |
+          sed -i '/<!--SYNC-TABLE-START-->/,/<!--SYNC-TABLE-END-->/d' README.md
           {
-            echo "${TABLE_TITLE}"
-            echo ""
-            echo "|   | 源镜像 | pull 镜像 | 同步 | 更新时间 |"
-            echo "| ---- | -------- | --------- | ---- | -------- |"
-            echo "$sorted_table_rows"
-          } > new_table.tmp
+            echo "<!--SYNC-TABLE-START-->"
+            echo "## 📦 镜像同步状态"
+            cat sync_table.md
+            echo "<!--SYNC-TABLE-END-->"
+          } >> README.md
 
-          awk '
-            BEGIN { replaced=0 }
-            $0 == "'"${TABLE_TITLE}"'" && !replaced {
-              while ((getline line < "new_table.tmp") > 0) { print line }
-              close("new_table.tmp");
-              replaced=1;
-              skipping=1;
-              next;
-            }
-            skipping {
-              if (!/^\|/ && !/^$/) { skipping=0 } else { next }
-            }
-            { print }
-          ' README.md > README.tmp && mv README.tmp README.md
-          rm new_table.tmp
-
-          # 提交更改
+      - name: Commit changes
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add README.md
-          if git diff --staged --quiet; then
-            echo "没有新的镜像或文件变更可提交。"
-          else
-            git commit -m "chore(sync): 同步新镜像并自动排序更新README"
-            git push
-          fi
+          git commit -m "更新镜像同步表格（保留原内容+备注列） [skip ci]" || echo "No changes to commit"
+          git push
