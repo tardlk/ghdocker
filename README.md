@@ -16,17 +16,6 @@
 
 ---
 
-<!--SYNC-TABLE-START-->
-## 📦 镜像同步状态
-最后更新时间（北京时间）：尚未同步
-
-| 源镜像 | 同步后镜像（可复制） | 更新时间（北京时间） | 备注 |
-| ------ | ------------------- | -------------------- | ---- |
-| `nginx:latest` | `docker pull ghcr.io/YOUR_USERNAME/nginx:latest` | 尚未同步 | Nginx 官方镜像（测试：应能成功同步） |
-| `louislam/dockge:1` | `docker pull ghcr.io/YOUR_USERNAME/louislam/dockge:1` | 尚未同步 | Dockge 面板（测试：应能成功同步） |
-| `redis:7` | `docker pull ghcr.io/YOUR_USERNAME/redis:7` | 尚未同步 | Redis 7 稳定版（测试：应能成功同步） |
-| `thisimagenotexist:latest` | `docker pull ghcr.io/YOUR_USERNAME/thisimagenotexist:latest` | 尚未同步 | 测试：应显示 ❌ 拉取失败 |
-<!--SYNC-TABLE-END-->
 
 > ⚠️ 请将 `YOUR_USERNAME` 替换为你的 GitHub 用户名（小写），否则 GHCR 会报错。
 
@@ -39,3 +28,13 @@
 示例：
 ```markdown
 | `bitnami/mariadb:11.4.2` | `docker pull ghcr.io/YOUR_USERNAME/bitnami/mariadb:11.4.2` | 尚未同步 | Bitnami 版 MariaDB |
+<!--SYNC-TABLE-START-->
+## 📦 镜像同步状态
+最后更新时间（北京时间）：2025-09-20 11:44:42
+
+| 源镜像 | 同步后镜像（可复制） | 更新时间（北京时间） | 备注 |
+| ------ | ------------------- | -------------------- | ---- |
+ `thisimagenotexist:latest` | ❌ 拉取失败 | 2025-09-20 11:45:03 | 测试：应显示 ❌ 拉取失败 |
+ `redis:7` | `docker pull ghcr.io/YOUR_USERNAME/redis:7` | 2025-09-20 11:45:03 | Redis 7 稳定版（测试：应能成功同步） |
+ `louislam/dockge:1` | `docker pull ghcr.io/YOUR_USERNAME/louislam/dockge:1` | 2025-09-20 11:45:00 | Dockge 面板（测试：应能成功同步） |
+<!--SYNC-TABLE-END-->
