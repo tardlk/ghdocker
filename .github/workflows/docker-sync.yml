@@ -3,31 +3,39 @@ name: Docker Image Sync
 on:
   schedule:
     - cron: '0 2 * * *' # 每天北京时间 10 点执行（UTC 2 点）
-  workflow_dispatch:
+  workflow_dispatch: # 允许手动触发
 
 jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
+      # 1. 检出仓库代码
+      - name: 检出仓库
         uses: actions/checkout@v4
 
-      - name: Log in to GitHub Container Registry
+      # 2. 登录 GHCR
+      - name: 登录 GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract mirrors from README
+      # 3. 将 GitHub 用户名转为小写（防止 GHCR 报错）
+      - name: 转换用户名为小写
         run: |
-          # 提取 README 中表格的行（去掉表头和空行）
+          echo "OWNER_LC=${OWNER,,}" >> $GITHUB_ENV
+        env:
+          OWNER: ${{ github.repository_owner }}
+
+      # 4. 从 README 中提取镜像列表
+      - name: 从 README 提取镜像列表
+        run: |
           sed -n '/<!--SYNC-TABLE-START-->/,/<!--SYNC-TABLE-END-->/p' README.md \
             | grep '|' \
             | tail -n +4 \
             > old_table.txt
 
-          # 提取源镜像列表
           MIRRORS=($(awk -F'|' '{gsub(/`/, "", $2); gsub(/^[ \t]+|[ \t]+$/, "", $2); if($2!="无更新" && $2!="") print $2}' old_table.txt))
 
           if [ ${#MIRRORS[@]} -eq 0 ]; then
@@ -37,7 +45,8 @@ jobs:
 
           echo "MIRRORS_LIST=${MIRRORS[*]}" >> $GITHUB_ENV
 
-      - name: Sync Docker images (preserve old content + remarks)
+      # 5. 同步镜像（保留原内容 + 备注列 + 日志记录）
+      - name: 同步镜像
         run: |
           set -e
           LAST_UPDATE=$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')
@@ -59,15 +68,20 @@ jobs:
             OLD_REMARK["$src_clean"]="$remark_clean"
           done < old_table.txt
 
+          UPDATED_IMAGES=()
+          FAILED_IMAGES=()
+          SKIPPED_IMAGES=()
+
           for IMAGE in ${MIRRORS_LIST}; do
-            TARGET="ghcr.io/${{ github.repository_owner }}/$IMAGE"
+            TARGET="ghcr.io/${OWNER_LC}/$IMAGE"
             REMARK="${OLD_REMARK[$IMAGE]}"
 
             echo "检查 $IMAGE 是否有更新..."
             if ! docker pull --quiet $IMAGE; then
               echo "❌ $IMAGE 拉取失败"
+              FAILED_IMAGES+=("$IMAGE")
               NOW=$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')
-              echo "$NOW| \`$IMAGE\` | ❌ 拉取失败 | $NOW | $REMARK |" >> "$TMP_FILE"
+              echo "| \`$IMAGE\` | ❌ 拉取失败 | $NOW | $REMARK |" >> "$TMP_FILE"
               continue
             fi
 
@@ -80,22 +94,32 @@ jobs:
               echo "发现更新，开始同步 $IMAGE..."
               docker tag $IMAGE $TARGET
               docker push $TARGET
+              UPDATED_IMAGES+=("$IMAGE")
               NOW=$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')
-              echo "$NOW| \`$IMAGE\` | \`docker pull $TARGET\` | $NOW | $REMARK |" >> "$TMP_FILE"
+              echo "| \`$IMAGE\` | \`docker pull $TARGET\` | $NOW | $REMARK |" >> "$TMP_FILE"
             else
               echo "$IMAGE 无更新，保留原同步后镜像列内容"
+              SKIPPED_IMAGES+=("$IMAGE")
               NOW=$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')
               old_val="${OLD_MIRROR[$IMAGE]}"
               if [ -z "$old_val" ] || [ "$old_val" = "❌ 拉取失败" ]; then
                 old_val="\`docker pull $TARGET\`"
               fi
-              echo "$NOW| \`$IMAGE\` | $old_val | $NOW | $REMARK |" >> "$TMP_FILE"
+              echo "| \`$IMAGE\` | $old_val | $NOW | $REMARK |" >> "$TMP_FILE"
             fi
           done
 
           sort -r "$TMP_FILE" | cut -d'|' -f2- >> sync_table.md
 
-      - name: Update README.md
+          echo ""
+          echo "===== 本次运行摘要 ====="
+          echo "✅ 更新的镜像: ${UPDATED_IMAGES[*]:-(无)}"
+          echo "❌ 拉取失败的镜像: ${FAILED_IMAGES[*]:-(无)}"
+          echo "⏩ 无更新的镜像: ${SKIPPED_IMAGES[*]:-(无)}"
+          echo "======================="
+
+      # 6. 更新 README.md
+      - name: 更新 README.md
         run: |
           sed -i '/<!--SYNC-TABLE-START-->/,/<!--SYNC-TABLE-END-->/d' README.md
           {
@@ -105,10 +129,11 @@ jobs:
             echo "<!--SYNC-TABLE-END-->"
           } >> README.md
 
-      - name: Commit changes
+      # 7. 提交更改
+      - name: 提交更改
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add README.md
-          git commit -m "更新镜像同步表格（保留原内容+备注列） [skip ci]" || echo "No changes to commit"
+          git commit -m "更新镜像同步表格（保留原内容+备注列+日志摘要+用户名小写） [skip ci]" || echo "No changes to commit"
           git push
