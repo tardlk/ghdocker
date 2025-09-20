@@ -29,13 +29,9 @@
 
 | 源镜像 | 同步后镜像（可复制） | 更新时间（北京时间） | 备注 |
 | ------ | ------------------- | -------------------- | ---- |
- `redis:latest` | `docker pull ghcr.io/tardlk/redis:latest` | 2025-09-20 13:03:53 | - |
- `python:3.11` | `docker pull ghcr.io/tardlk/python:3.11` | 2025-09-20 13:06:09 | - |
- `postgres:15` | `docker pull ghcr.io/tardlk/postgres:15` | 2025-09-20 13:04:52 | - |
- `node:20` | `docker pull ghcr.io/tardlk/node:20` | 2025-09-20 13:06:49 | - |
- `mysql:8.0` | `docker pull ghcr.io/tardlk/mysql:8.0` | 2025-09-20 13:04:30 | - |
- `mongo:6.0` | `docker pull ghcr.io/tardlk/mongo:6.0` | 2025-09-20 13:05:26 | - |
- `golang:1.21` | `docker pull ghcr.io/tardlk/golang:1.21` | 2025-09-20 13:07:19 | - |
- `busybox:latest` | `docker pull ghcr.io/tardlk/busybox:latest` | 2025-09-20 13:03:58 | - |
- `alpine:latest` | `docker pull ghcr.io/tardlk/alpine:latest` | 2025-09-20 13:03:56 | - |
+ `louislam/dockge:1` | `docker pull ghcr.io/tardlk/redis:latest` | 2025-09-20 13:03:53 | - |
+ `openlistteam/openlist:latest` | `docker pull ghcr.io/tardlk/python:3.11` | 2025-09-20 13:06:09 | - |
+ `nyanmisaka/jellyfin:latest` | `docker pull ghcr.io/tardlk/postgres:15` | 2025-09-20 13:04:52 | - |
+ `mzz2017/v2raya:latest` | `docker pull ghcr.io/tardlk/node:20` | 2025-09-20 13:06:49 | - |
+ `jxxghp/moviepilot-v2:latest` | `docker pull ghcr.io/tardlk/mysql:8.0` | 2025-09-20 13:04:30 | - |
 <!--SYNC-TABLE-END-->
