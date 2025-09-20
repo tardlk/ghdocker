@@ -11,4 +11,3 @@
 |   | 源镜像 | pull 镜像 | 同步 | 更新时间 |
 | ---- | -------- | --------- | ---- | -------- |
 | 1   | louislam/dockge:1 | `ghcr.io/tardlk/dockge:1` | ✔️ |  |
-| 2   | jxxghp/moviepilot-v2:2.8.0 | `ghcr.io/tardlk/jxxghp/moviepilot-v2:2.8.0` | ✔️ | 2025-09-19 |
