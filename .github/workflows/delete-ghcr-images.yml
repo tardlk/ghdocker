@@ -1,7 +1,7 @@
 name: Delete GHCR Images for This Repo
 
 on:
-  workflow_dispatch: # 手动触发
+  workflow_dispatch:
 
 jobs:
   delete-images:
@@ -9,14 +9,14 @@ jobs:
     steps:
       - name: 删除当前仓库关联的所有 GHCR 镜像
         run: |
-          USERNAME=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           REPO=$(echo "${{ github.event.repository.name }}" | tr '[:upper:]' '[:lower:]')
 
-          echo "Deleting all GHCR images for $USERNAME/$REPO ..."
+          echo "Deleting all GHCR images for $OWNER/$REPO ..."
 
-          # 获取所有版本 ID（使用 GITHUB_TOKEN）
+          # 获取所有版本 ID（使用 repos API）
           VERSION_IDS=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/users/$USERNAME/packages/container/$REPO/versions?per_page=100" \
+            "https://api.github.com/repos/$OWNER/$REPO/packages/container/$REPO/versions?per_page=100" \
             | jq -r '.[].id')
 
           if [ -z "$VERSION_IDS" ] || [ "$VERSION_IDS" = "null" ]; then
@@ -28,7 +28,7 @@ jobs:
             echo "Deleting version ID: $vid"
             curl -s -X DELETE \
               -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-              "https://api.github.com/users/$USERNAME/packages/container/$REPO/versions/$vid"
+              "https://api.github.com/repos/$OWNER/$REPO/packages/container/$REPO/versions/$vid"
           done
 
           echo "✅ 删除完成"
