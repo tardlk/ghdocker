@@ -1,4 +1,4 @@
-name: Delete All Synced GHCR Images
+name: Delete GHCR Images for This Repo
 
 on:
   workflow_dispatch: # 手动触发
@@ -7,30 +7,28 @@ jobs:
   delete-images:
     runs-on: ubuntu-latest
     steps:
-      - name: 获取镜像列表
-        id: list
+      - name: 删除当前仓库关联的所有 GHCR 镜像
         run: |
           USERNAME=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          echo "USERNAME=$USERNAME" >> $GITHUB_ENV
-          echo "Fetching package list for $USERNAME..."
-          curl -s -H "Authorization: Bearer ${{ secrets.GHCR_PAT }}" \
-            https://api.github.com/user/packages/container \
-            | jq -r '.[].name' > packages.txt
-          echo "PACKAGES=$(cat packages.txt | xargs)" >> $GITHUB_ENV
+          REPO=$(echo "${{ github.event.repository.name }}" | tr '[:upper:]' '[:lower:]')
 
-      - name: 删除所有镜像
-        run: |
-          USERNAME=$USERNAME
-          for pkg in $PACKAGES; do
-            echo "Deleting package: $pkg"
-            # 获取所有版本 ID
-            VERSION_IDS=$(curl -s -H "Authorization: Bearer ${{ secrets.GHCR_PAT }}" \
-              https://api.github.com/user/packages/container/$pkg/versions \
-              | jq -r '.[].id')
-            for vid in $VERSION_IDS; do
-              echo "  Deleting version ID: $vid"
-              curl -s -X DELETE \
-                -H "Authorization: Bearer ${{ secrets.GHCR_PAT }}" \
-                https://api.github.com/user/packages/container/$pkg/versions/$vid
-            done
+          echo "Deleting all GHCR images for $USERNAME/$REPO ..."
+
+          # 获取所有版本 ID（使用 GITHUB_TOKEN）
+          VERSION_IDS=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/users/$USERNAME/packages/container/$REPO/versions?per_page=100" \
+            | jq -r '.[].id')
+
+          if [ -z "$VERSION_IDS" ] || [ "$VERSION_IDS" = "null" ]; then
+            echo "❌ 没有找到任何版本，可能是包名不匹配或已经全部删除"
+            exit 0
+          fi
+
+          for vid in $VERSION_IDS; do
+            echo "Deleting version ID: $vid"
+            curl -s -X DELETE \
+              -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+              "https://api.github.com/users/$USERNAME/packages/container/$REPO/versions/$vid"
           done
+
+          echo "✅ 删除完成"
