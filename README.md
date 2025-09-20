@@ -10,5 +10,3 @@
 
 |   | 源镜像 | pull 镜像 | 同步 | 更新时间 |
 | ---- | -------- | --------- | ---- | -------- |
-| 1   | louislam/dockge:1 | `ghcr.io/tardlk/dockge:1` | ✔️ |  |
-| 2   | openlistteam/openlist:v4.1.2 | `ghcr.io/tardlk/openlistteam/openlist` | ✔️ |  |
