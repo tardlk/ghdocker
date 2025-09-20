@@ -1,12 +1,14 @@
-# 🚀 Docker 镜像工具箱
+# ghdocker
 
-本项目是一个 GitHub Actions 工作流集合，旨在提供一站式的 Docker 镜像管理方案。
+自动同步 Docker 镜像到 GitHub Container Registry，并支持国内加速。
 
-## 🔄 功能：同步公共镜像以加速下载
+<!--SYNC-TABLE-START-->
+## 📦 镜像同步状态
+最后更新时间（北京时间）：2025-09-20 19:15:00
 
-此功能用于将 Docker Hub 等公共仓库的镜像同步到你的 `ghcr.io`，方便国内网络环境快速拉取。如果 `ghcr.io` 速度仍不理想，可配合南京大学加速站 `ghcr.nju.edu.cn` 使用。
-
-### 已同步的 Docker 镜像
-
-|   | 源镜像 | pull 镜像 | 同步 | 更新时间 |
-| ---- | -------- | --------- | ---- | -------- |
+| 源镜像 | 同步后镜像（可复制） | 更新时间（北京时间） | 备注 |
+| ------ | ------------------- | -------------------- | ---- |
+| `louislam/dockge:1` | `docker pull ghcr.io/你的用户名/louislam/dockge:1` | 2025-09-20 19:15:00 | Dockge 面板 |
+| `nginx:latest` | `docker pull ghcr.io/你的用户名/nginx:latest` | 2025-09-20 19:15:00 | 推荐使用加速源：ghcr.nju.edu.cn |
+| `redis:7` | ❌ 拉取失败 | 2025-09-20 19:15:00 | Redis 7 稳定版 |
+<!--SYNC-TABLE-END-->
