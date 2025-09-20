@@ -7,6 +7,8 @@
 此功能用于将 Docker Hub 等公共仓库的镜像同步到你的 `ghcr.io`，方便国内网络环境快速拉取。如果 `ghcr.io` 速度仍不理想，可配合南京大学加速站 `ghcr.nju.edu.cn` 使用。
 
 ### 已同步的 Docker 镜像
+
 |   | 源镜像 | pull 镜像 | 同步 | 更新时间 |
-|----|--------|-----------|------|--------|
-| 1 | jxxghp/moviepilot-v2:2.8.0 | `ghcr.io/tardlk/jxxghp/moviepilot-v2:2.8.0` | ✔️ | 2025-09-19 |
+| ---- | -------- | --------- | ---- | -------- |
+| 1   | louislam/dockge:1 | `ghcr.io/tardlk/dockge:1` | ✔️ |  |
+| 2   | jxxghp/moviepilot-v2:2.8.0 | `ghcr.io/tardlk/jxxghp/moviepilot-v2:2.8.0` | ✔️ | 2025-09-19 |
