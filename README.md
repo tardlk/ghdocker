@@ -33,12 +33,4 @@
  `pull` | ❌ 拉取失败 | 2025-09-20 13:52:00 |  |
  `pull` | ❌ 拉取失败 | 2025-09-20 13:52:00 |  |
  `pull` | ❌ 拉取失败 | 2025-09-20 13:51:59 |  |
- `ghcr.io/tardlk/python:3.11` | ❌ 拉取失败 | 2025-09-20 13:51:59 |  |
- `ghcr.io/tardlk/postgres:15` | ❌ 拉取失败 | 2025-09-20 13:52:00 |  |
- `ghcr.io/tardlk/node:20` | ❌ 拉取失败 | 2025-09-20 13:52:01 |  |
- `ghcr.io/tardlk/mysql:8.0` | ❌ 拉取失败 | 2025-09-20 13:52:01 |  |
- `docker` | `docker pull ghcr.io/tardlk/docker` | 2025-09-20 13:52:01 |  |
- `docker` | `docker pull ghcr.io/tardlk/docker` | 2025-09-20 13:52:00 |  |
- `docker` | `docker pull ghcr.io/tardlk/docker` | 2025-09-20 13:52:00 |  |
- `docker` | `docker pull ghcr.io/tardlk/docker` | 2025-09-20 13:51:59 |  |
 <!--SYNC-TABLE-END-->
